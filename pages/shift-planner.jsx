@@ -4,6 +4,8 @@ import React, { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import { supabase } from "../lib/supabaseClient";
 import NoSSR from "../components/NoSSR";
+import Link from "next/link";
+import { useRouter } from "next/router"; // เพิ่ม
 import "dayjs/locale/th";
 dayjs.locale("th");
 
@@ -18,6 +20,7 @@ const currentYear = dayjs().year();
 const currentMonth = dayjs().month() + 1;
 
 function ShiftPlanner() {
+  const router = useRouter(); // เพิ่ม
   const [assignments, setAssignments] = useState({});
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
@@ -28,6 +31,9 @@ function ShiftPlanner() {
 
   const [nurseList, setNurseList] = useState([]);
   const [nurseMap, setNurseMap] = useState({});
+
+  const [hospitalId, setHospitalId] = useState(null);
+  const [wardId, setWardId] = useState(null);
 
   useEffect(() => {
     const loadNurses = async () => {
@@ -50,15 +56,50 @@ function ShiftPlanner() {
   }, []);
 
   useEffect(() => {
+    const prefs = JSON.parse(localStorage.getItem("user_context"));
+    if (!prefs || !prefs.hospital_id || !prefs.ward_id) {
+      router.push("/system-settings"); // redirect ทันที
+      return;
+    }
+
+    setHospitalId(prefs.hospital_id);
+    setWardId(prefs.ward_id);
+
+    const init = async () => {
+      const { data, error } = await supabase
+        .from("nurses")
+        .select("id, name, display_order")
+        .eq("hospital_id", prefs.hospital_id)
+        .eq("ward_id", prefs.ward_id)
+        .eq("active", true)
+        .order("display_order", { ascending: true });
+
+      if (error) {
+        setStatusMessage("⚠️ โหลดรายชื่อพยาบาลไม่สำเร็จ");
+      } else {
+        setNurseList(data.map((n) => n.id));
+        const map = {};
+        data.forEach((n) => (map[n.id] = n.name));
+        setNurseMap(map);
+      }
+    };
+
+    init();
+  }, []);
+
+  useEffect(() => {
     const fetchFromSupabase = async () => {
+      if (!hospitalId || !wardId) return;
       const monthStart = `${yearMonth}-01`;
       const monthEnd = dayjs(monthStart).endOf("month").format("YYYY-MM-DD");
 
       const { data, error } = await supabase
         .from("nurse_shifts")
         .select("*")
-        .gte("date", monthStart)
-        .lte("date", monthEnd);
+        .eq("hospital_id", hospitalId)
+        .eq("ward_id", wardId)
+        .gte("shift_date", monthStart)
+        .lte("shift_date", monthEnd);
 
       if (error) {
         setStatusMessage("เกิดข้อผิดพลาดในการโหลดข้อมูล");
@@ -73,10 +114,10 @@ function ShiftPlanner() {
 
       const loaded = {};
       for (const row of data) {
-        if (!loaded[row.date]) loaded[row.date] = {};
-        if (!loaded[row.date][row.nurse_id])
-          loaded[row.date][row.nurse_id] = [];
-        loaded[row.date][row.nurse_id].push(row.shift);
+        const date = row.shift_date;
+        if (!loaded[date]) loaded[date] = {};
+        if (!loaded[date][row.nurse_id]) loaded[date][row.nurse_id] = [];
+        loaded[date][row.nurse_id].push(row.shift_type);
       }
 
       setAssignments(loaded);
@@ -84,7 +125,7 @@ function ShiftPlanner() {
     };
 
     fetchFromSupabase();
-  }, [year, month]);
+  }, [year, month, hospitalId, wardId]);
 
   const toggleShift = (nurse, day, shift) => {
     const key = `${yearMonth}-${day.toString().padStart(2, "0")}`;
@@ -106,12 +147,23 @@ function ShiftPlanner() {
   };
 
   const saveToSupabase = async () => {
+    if (!hospitalId || !wardId) {
+      alert("ไม่มี hospital_id หรือ ward_id ในบริบทผู้ใช้");
+      return;
+    }
+
     try {
       const rows = [];
       for (const [date, nurses] of Object.entries(assignments)) {
         for (const [nurse, shiftList] of Object.entries(nurses)) {
           for (const shift of shiftList) {
-            rows.push({ nurse_id: nurse, date, shift });
+            rows.push({
+              nurse_id: nurse,
+              shift_date: date,
+              shift_type: shift,
+              hospital_id: hospitalId,
+              ward_id: wardId,
+            });
           }
         }
       }
@@ -122,8 +174,10 @@ function ShiftPlanner() {
       await supabase
         .from("nurse_shifts")
         .delete()
-        .gte("date", monthStart)
-        .lte("date", monthEnd);
+        .eq("hospital_id", hospitalId)
+        .eq("ward_id", wardId)
+        .gte("shift_date", monthStart)
+        .lte("shift_date", monthEnd);
 
       const { error } = await supabase.from("nurse_shifts").insert(rows);
       if (error) {
@@ -220,11 +274,70 @@ function ShiftPlanner() {
 
   return (
     <div className="overflow-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">
-        📅 แผนผังจัดเวรพยาบาล (
-        {dayjs(`${year}-${month}-01`).format("MMMM YYYY")})
-      </h1>
+      {/* หัวเรื่อง + ปุ่มลิงก์ admin */}
+      <div className="flex flex-wrap items-center justify-between mb-4">
+        <h1 className="text-2xl font-bold">
+          📅 แผนผังจัดเวรพยาบาล (
+          {dayjs(`${year}-${month}-01`).format("MMMM YYYY")})
+        </h1>
+        {hospitalId && wardId && (
+          <div className="text-sm text-gray-600">
+            🏥 โรงพยาบาล:{" "}
+            <strong>
+              {localStorage.getItem("user_context")
+                ? JSON.parse(localStorage.getItem("user_context")).hospital_name
+                : hospitalId}
+            </strong>{" "}
+            | 🏬 วอร์ด:{" "}
+            <strong>
+              {localStorage.getItem("user_context")
+                ? JSON.parse(localStorage.getItem("user_context")).ward_name
+                : wardId}
+            </strong>
+          </div>
+        )}
 
+        <div className="flex flex-wrap gap-2 mt-2">
+          <Link href="/admin-hospitals">
+            <button className="px-3 py-2 bg-gray-700 text-white rounded">
+              🏥 โรงพยาบาล
+            </button>
+          </Link>
+          <Link href="/admin-wards">
+            <button className="px-3 py-2 bg-gray-700 text-white rounded">
+              🏬 วอร์ด
+            </button>
+          </Link>
+          <Link href="/nurse-manager">
+            <button className="px-3 py-2 bg-gray-700 text-white rounded">
+              🧑‍⚕️ พยาบาล
+            </button>
+          </Link>
+          <Link href="/admin-users">
+            <button className="px-3 py-2 bg-gray-700 text-white rounded">
+              👤 ผู้ใช้
+            </button>
+          </Link>
+          <Link href="/system-settings">
+            <button className="px-3 py-2 bg-gray-700 text-white rounded">
+              ⚙️ ตั้งค่าระบบ
+            </button>
+          </Link>
+          {/* ⚠️ ปุ่มล้างระบบ - ใช้ชั่วคราวสำหรับการทดสอบ */}
+          {/* <button
+            onClick={() => {
+              localStorage.removeItem("user_context");
+              alert("ล้างการตั้งค่าเรียบร้อยแล้ว กำลังโหลดใหม่...");
+              window.location.reload();
+            }}
+            className="px-3 py-2 bg-red-500 text-white rounded"
+          >
+            🧹 ล้างระบบ
+          </button> */}
+        </div>
+      </div>
+
+      {/* ควบคุมปี / เดือน / ปุ่มคำสั่ง */}
       <div className="mb-4 flex gap-4 flex-wrap items-center">
         <label>ปี พ.ศ.:</label>
         <select
@@ -254,12 +367,7 @@ function ShiftPlanner() {
             </option>
           ))}
         </select>
-        <button
-          onClick={() => (window.location.href = "/nurse-manager")}
-          className="px-4 py-2 bg-gray-700 text-white rounded"
-        >
-          🧑‍⚕️ จัดการรายชื่อพยาบาล
-        </button>
+
         <button
           onClick={saveToSupabase}
           className="px-4 py-2 bg-green-600 text-white rounded"
@@ -303,12 +411,14 @@ function ShiftPlanner() {
         </button>
       </div>
 
+      {/* ข้อความสถานะ */}
       {statusMessage && (
         <div className="mb-4 text-sm text-white bg-gray-800 p-2 rounded">
           {statusMessage}
         </div>
       )}
 
+      {/* ตารางเวรพยาบาล */}
       <table className="table-auto border-collapse">
         <thead>
           <tr>
