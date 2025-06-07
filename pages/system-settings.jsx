@@ -46,7 +46,7 @@ export default function SystemSettingsPage() {
 
   const saveSettings = () => {
     if (!selectedHospital || !selectedWard) {
-      toast.info("กรุณาเลือกโรงพยาบาลและวอร์ดก่อนบันทึก");
+      toast.info("กรุณาเลือกโรงพยาบาลและวอร์ดก่อนบันทึก", { autoClose: 2000 });
       return;
     }
 
@@ -63,7 +63,7 @@ export default function SystemSettingsPage() {
       })
     );
 
-    toast.success("✅ บันทึกการตั้งค่าระบบเรียบร้อยแล้ว");
+    toast.success("✅ บันทึกการตั้งค่าระบบเรียบร้อยแล้ว", { autoClose: 2000 });
     router.push("/shift-planner");
   };
 

@@ -149,7 +149,7 @@ function ShiftPlanner() {
 
   const saveToSupabase = async () => {
     if (!hospitalId || !wardId) {
-      toast.error("⚠️ ไม่มี hospital_id หรือ ward_id ในบริบทผู้ใช้");
+      toast.error("⚠️ ไม่มี hospital_id หรือ ward_id ในบริบทผู้ใช้", { autoClose: 2000 });
       return;
     }
 
@@ -182,12 +182,12 @@ function ShiftPlanner() {
 
       const { error } = await supabase.from("nurse_shifts").insert(rows);
       if (error) {
-        toast.error("❌ เกิดข้อผิดพลาด: " + error.message);
+        toast.error("❌ เกิดข้อผิดพลาด: " + error.message, { autoClose: 2000 });
       } else {
-        toast.success("✅ บันทึกข้อมูลสำเร็จ");
+        toast.success("✅ บันทึกข้อมูลสำเร็จ", { autoClose: 2000 });
       }
     } catch (e) {
-      toast.error("⚠️ บันทึกล้มเหลว: " + e.message);
+      toast.error("⚠️ บันทึกล้มเหลว: " + e.message, { autoClose: 2000 });
     }
   };
 
@@ -210,7 +210,7 @@ function ShiftPlanner() {
       .lte("date", prevMonthEnd);
 
     if (error || !data || data.length === 0) {
-      toast.error("⚠️ ไม่พบข้อมูลในเดือนก่อนหน้า");
+      toast.error("⚠️ ไม่พบข้อมูลในเดือนก่อนหน้า", { autoClose: 2000 });
       return;
     }
 
@@ -249,7 +249,7 @@ function ShiftPlanner() {
       output += "\n";
     }
 
-    toast.info(output);
+    toast.info(output, { autoClose: 2000 });
   };
 
   const exportToExcel = async () => {
@@ -339,7 +339,7 @@ function ShiftPlanner() {
           {/* <button
             onClick={() => {
               localStorage.removeItem("user_context");
-              toast.error("⚠️ ล้างการตั้งค่าเรียบร้อยแล้ว กำลังโหลดใหม่...");
+              toast.error("⚠️ ล้างการตั้งค่าเรียบร้อยแล้ว กำลังโหลดใหม่...", { autoClose: 2000 });
               window.location.reload();
             }}
             className="px-3 py-2 bg-red-500 text-white rounded"

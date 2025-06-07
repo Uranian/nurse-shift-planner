@@ -135,11 +135,24 @@ export default function MassagePlannerPage() {
     ]);
 
     if (error) {
-      toast.success("⚠️ เกิดข้อผิดพลาดในการจอง: " + error.message);
+      toast.error("⚠️ เกิดข้อผิดพลาดในการจอง: " + error.message, { autoClose: 2000 });
     } else {
-      toast.error("🎉 จองสำเร็จ!");
+      toast.success("🎉 จองสำเร็จ!", { autoClose: 2000 });
       setShowModal(false);
-      // TODO: reload bookings
+
+      // ✅ โหลด bookings ใหม่ทันทีหลังจอง
+      const startDate = dayjs(`${year}-${month}-01`).format("YYYY-MM-DD");
+      const endDate = dayjs(`${year}-${month}-01`)
+        .endOf("month")
+        .format("YYYY-MM-DD");
+
+      const { data, error: fetchError } = await supabase
+        .from("massage_bookings")
+        .select("id, nurse_id, date, start_time, duration_hours")
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      if (!fetchError) setBookings(data);
     }
   }
 
@@ -250,7 +263,7 @@ export default function MassagePlannerPage() {
                                   .delete()
                                   .eq("id", booking.id)
                                   .then(() => {
-                                    toast.info("🗑️ ยกเลิกสำเร็จ");
+                                    toast.info("🗑️ ยกเลิกสำเร็จ", { autoClose: 2000 });
                                     // โหลดใหม่
                                     setBookings((prev) =>
                                       prev.filter((b) => b.id !== booking.id)
