@@ -5,6 +5,7 @@ import dayjs from "dayjs";
 import { supabase } from "../lib/supabaseClient";
 import NoSSR from "../components/NoSSR";
 import Link from "next/link";
+import { toast } from "react-toastify";
 import { useRouter } from "next/router"; // เพิ่ม
 import "dayjs/locale/th";
 dayjs.locale("th");
@@ -148,7 +149,7 @@ function ShiftPlanner() {
 
   const saveToSupabase = async () => {
     if (!hospitalId || !wardId) {
-      alert("ไม่มี hospital_id หรือ ward_id ในบริบทผู้ใช้");
+      toast.error("⚠️ ไม่มี hospital_id หรือ ward_id ในบริบทผู้ใช้");
       return;
     }
 
@@ -181,12 +182,12 @@ function ShiftPlanner() {
 
       const { error } = await supabase.from("nurse_shifts").insert(rows);
       if (error) {
-        alert("❌ เกิดข้อผิดพลาด: " + error.message);
+        toast.error("❌ เกิดข้อผิดพลาด: " + error.message);
       } else {
-        alert("✅ บันทึกข้อมูลสำเร็จ");
+        toast.success("✅ บันทึกข้อมูลสำเร็จ");
       }
     } catch (e) {
-      alert("⚠️ บันทึกล้มเหลว: " + e.message);
+      toast.error("⚠️ บันทึกล้มเหลว: " + e.message);
     }
   };
 
@@ -209,7 +210,7 @@ function ShiftPlanner() {
       .lte("date", prevMonthEnd);
 
     if (error || !data || data.length === 0) {
-      alert("ไม่พบข้อมูลในเดือนก่อนหน้า");
+      toast.error("⚠️ ไม่พบข้อมูลในเดือนก่อนหน้า");
       return;
     }
 
@@ -248,7 +249,7 @@ function ShiftPlanner() {
       output += "\n";
     }
 
-    alert(output);
+    toast.info(output);
   };
 
   const exportToExcel = async () => {
@@ -298,7 +299,7 @@ function ShiftPlanner() {
         )}
 
         <div className="flex flex-wrap gap-2 mt-2">
-          <Link href="/admin-hospitals">
+          {/* <Link href="/admin-hospitals">
             <button className="px-3 py-2 bg-gray-700 text-white rounded">
               🏥 โรงพยาบาล
             </button>
@@ -313,6 +314,12 @@ function ShiftPlanner() {
               🧑‍⚕️ พยาบาล
             </button>
           </Link>
+          <Link href="/massage-planner">
+            <button className="px-3 py-2 bg-green-700 text-white rounded">
+              💆‍♀️ จัดคิวนวด
+            </button>
+          </Link>
+          0
           <Link href="/admin-users">
             <button className="px-3 py-2 bg-gray-700 text-white rounded">
               👤 ผู้ใช้
@@ -322,12 +329,17 @@ function ShiftPlanner() {
             <button className="px-3 py-2 bg-gray-700 text-white rounded">
               ⚙️ ตั้งค่าระบบ
             </button>
+          </Link> */}
+          <Link href="/admin-dashboard">
+            <button className="px-3 py-2 bg-gray-800 text-white rounded">
+              🛠️ แผงควบคุมระบบ
+            </button>
           </Link>
           {/* ⚠️ ปุ่มล้างระบบ - ใช้ชั่วคราวสำหรับการทดสอบ */}
           {/* <button
             onClick={() => {
               localStorage.removeItem("user_context");
-              alert("ล้างการตั้งค่าเรียบร้อยแล้ว กำลังโหลดใหม่...");
+              toast.error("⚠️ ล้างการตั้งค่าเรียบร้อยแล้ว กำลังโหลดใหม่...");
               window.location.reload();
             }}
             className="px-3 py-2 bg-red-500 text-white rounded"

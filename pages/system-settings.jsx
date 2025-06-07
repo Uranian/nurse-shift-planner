@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { useRouter } from "next/router";
+import { toast } from "react-toastify";
 
 export default function SystemSettingsPage() {
   const [hospitals, setHospitals] = useState([]);
@@ -45,7 +46,7 @@ export default function SystemSettingsPage() {
 
   const saveSettings = () => {
     if (!selectedHospital || !selectedWard) {
-      alert("กรุณาเลือกโรงพยาบาลและวอร์ดก่อนบันทึก");
+      toast.info("กรุณาเลือกโรงพยาบาลและวอร์ดก่อนบันทึก");
       return;
     }
 
@@ -62,7 +63,7 @@ export default function SystemSettingsPage() {
       })
     );
 
-    alert("✅ บันทึกการตั้งค่าระบบเรียบร้อยแล้ว");
+    toast.success("✅ บันทึกการตั้งค่าระบบเรียบร้อยแล้ว");
     router.push("/shift-planner");
   };
 
@@ -72,9 +73,11 @@ export default function SystemSettingsPage() {
         ⚙️ ตั้งค่าระบบโรงพยาบาล / วอร์ด
       </h1>
 
-      <label className="block mb-2 font-semibold">🏥 เลือกโรงพยาบาล</label>
+      <label className="block mb-2 font-semibold">
+        🏥 เลือกโรงพยาบาล (ต้องเลือก)
+      </label>
       <select
-        className="w-full border p-2 rounded mb-4"
+        className="w-full border p-2 rounded mb-4 bg-white text-black"
         value={selectedHospital}
         onChange={(e) => {
           setSelectedHospital(e.target.value);
@@ -96,9 +99,11 @@ export default function SystemSettingsPage() {
         🏥 จัดการโรงพยาบาล
       </button>
 
-      <label className="block mb-2 font-semibold">🏬 เลือกวอร์ด</label>
+      <label className="block mb-2 font-semibold">
+        🏬 เลือกวอร์ด สำหรับจัดตารางเวรพยาบาล (ต้องเลือก)
+      </label>
       <select
-        className="w-full border p-2 rounded mb-4"
+        className="w-full border p-2 rounded mb-4 bg-white text-black"
         value={selectedWard}
         onChange={(e) => setSelectedWard(e.target.value)}
         disabled={!selectedHospital}

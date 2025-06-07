@@ -1,6 +1,7 @@
 // 📄 src/pages/admin-users.jsx
 
 import React, { useEffect, useState } from "react";
+import { toast } from "react-toastify";
 import { supabase } from "../lib/supabaseClient";
 
 export default function AdminUsers() {

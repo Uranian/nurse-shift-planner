@@ -1,6 +1,7 @@
 // 📄 pages/nurse-manager.jsx
 
 import { useEffect, useState } from "react";
+import { toast } from "react-toastify";
 import { supabase } from "../lib/supabaseClient";
 
 export default function NurseManagerPage() {
@@ -9,6 +10,7 @@ export default function NurseManagerPage() {
   const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
+    name: "",
     first_name: "",
     last_name: "",
     position: "",
@@ -19,10 +21,12 @@ export default function NurseManagerPage() {
     hospital_id: "",
     ward_id: "",
     is_active_for_shift: true,
+    is_active_for_massage: false, // ✅ เพิ่มตรงนี้
   });
 
   const [wards, setWards] = useState([]);
   const [hospitals, setHospitals] = useState([]);
+  const [editId, setEditId] = useState(null);
 
   useEffect(() => {
     fetchHospitals();
@@ -51,22 +55,65 @@ export default function NurseManagerPage() {
   }
 
   async function saveNurse() {
-    const { data, error } = await supabase.from("nurses").insert([formData]);
-    if (!error) {
-      setFormData({
-        first_name: "",
-        last_name: "",
-        position: "",
-        qualification: "",
-        phone: "",
-        line_id: "",
-        display_order: 0,
-        hospital_id: "",
-        ward_id: "",
-        is_active_for_shift: true,
-      });
-      fetchNurses();
+    const updatedFields = {
+      name: formData.name,
+      first_name: formData.first_name,
+      last_name: formData.last_name,
+      position: formData.position,
+      qualification: formData.qualification,
+      phone: formData.phone,
+      line_id: formData.line_id,
+      display_order: formData.display_order,
+      is_active_for_shift: formData.is_active_for_shift,
+      is_active_for_massage: formData.is_active_for_massage,
+    };
+
+    // เฉพาะกรณีมีค่า hospital_id
+    if (formData.hospital_id) {
+      updatedFields.hospital_id = formData.hospital_id;
     }
+    // เฉพาะกรณีมีค่า ward_id
+    if (formData.ward_id) {
+      updatedFields.ward_id = formData.ward_id;
+    }
+
+    if (editId) {
+      console.log("Updating nurse:", formData);
+
+      const { error } = await supabase
+        .from("nurses")
+        .update(updatedFields)
+        .eq("id", editId);
+      if (!error) {
+        console.error("Update error:", error);
+        setEditId(null);
+        resetForm();
+        fetchNurses();
+      }
+    } else {
+      const { error } = await supabase.from("nurses").insert([formData]);
+      if (!error) {
+        resetForm();
+        fetchNurses();
+      }
+    }
+  }
+
+  function resetForm() {
+    setFormData({
+      name: "",
+      first_name: "",
+      last_name: "",
+      position: "",
+      qualification: "",
+      phone: "",
+      line_id: "",
+      display_order: 0,
+      hospital_id: null,
+      ward_id: null,
+      is_active_for_shift: true,
+      is_active_for_massage: false,
+    });
   }
 
   async function deleteNurse(id) {
@@ -95,6 +142,13 @@ export default function NurseManagerPage() {
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
+        <input
+          placeholder="ชื่อเรียก (ชื่อเล่น)"
+          value={formData.name}
+          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          className="border px-2 py-1"
+        />
+
         <input
           placeholder="ชื่อ"
           value={formData.first_name}
@@ -182,6 +236,20 @@ export default function NurseManagerPage() {
           />
           <span>ใช้งานในตารางเวร</span>
         </label>
+        <label className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={formData.is_active_for_massage}
+            onChange={(e) =>
+              setFormData({
+                ...formData,
+                is_active_for_massage: e.target.checked,
+              })
+            }
+          />
+          <span>ใช้งานในนัดนวด</span>
+        </label>
+
         <input
           type="number"
           placeholder="ลำดับแสดงผล"
@@ -195,10 +263,23 @@ export default function NurseManagerPage() {
 
       <button
         onClick={saveNurse}
-        className="px-4 py-2 bg-green-600 text-white rounded"
+        className={`px-4 py-2 ${
+          editId ? "bg-yellow-500" : "bg-green-600"
+        } text-white rounded`}
       >
-        💾 เพิ่มพยาบาล
+        {editId ? "💾 บันทึกการแก้ไข" : "💾 เพิ่มพยาบาล"}
       </button>
+      {editId && (
+        <button
+          onClick={() => {
+            setEditId(null);
+            resetForm();
+          }}
+          className="ml-2 px-4 py-2 bg-gray-500 text-white rounded"
+        >
+          ❌ ยกเลิก
+        </button>
+      )}
 
       <hr className="my-4" />
 
@@ -207,28 +288,55 @@ export default function NurseManagerPage() {
       ) : (
         <table className="w-full text-sm border">
           <thead>
-            <tr className="bg-gray-200">
-              <th className="border p-1">ชื่อ</th>
+            <tr className="bg-white text-black dark:bg-gray-900 dark:text-white">
+              <th className="border p-1">ชื่อเรียก - ชื่อ นามสกุล</th>
               <th className="border p-1">ตำแหน่ง</th>
               <th className="border p-1">วอร์ด</th>
               <th className="border p-1">ขึ้นเวร</th>
+              <th className="border p-1">นวด</th>
               <th className="border p-1">ลบ</th>
             </tr>
           </thead>
           <tbody>
             {filteredNurses.map((n) => (
               <tr key={n.id}>
-                <td className="border p-1">
-                  {n.first_name} {n.last_name}
+                <td className="border p-1 text-white">
+                  {n.name} - {n.first_name} {n.last_name}
                 </td>
-                <td className="border p-1">{n.position}</td>
-                <td className="border p-1">
+                <td className="border p-1 text-white">{n.position}</td>
+                <td className="border p-1 text-white">
                   {wards.find((w) => w.id === n.ward_id)?.name || "-"}
                 </td>
                 <td className="border p-1 text-center">
                   {n.is_active_for_shift ? "✅" : "❌"}
                 </td>
                 <td className="border p-1 text-center">
+                  {n.is_active_for_massage ? "✅" : "❌"}
+                </td>
+                <td className="border p-1 text-center space-x-2">
+                  <button
+                    onClick={() => {
+                      setFormData({
+                        name: n.name || "",
+                        first_name: n.first_name || "",
+                        last_name: n.last_name || "",
+                        position: n.position || "",
+                        qualification: n.qualification || "",
+                        phone: n.phone || "",
+                        line_id: n.line_id || "",
+                        display_order: n.display_order || 0,
+                        hospital_id: n.hospital_id || "",
+                        ward_id: n.ward_id || "",
+                        is_active_for_shift: n.is_active_for_shift,
+                        is_active_for_massage: n.is_active_for_massage,
+                      });
+                      setEditId(n.id);
+                    }}
+                    className="text-blue-500"
+                  >
+                    ✏️ แก้ไข
+                  </button>
+
                   <button
                     onClick={() => deleteNurse(n.id)}
                     className="text-red-600"

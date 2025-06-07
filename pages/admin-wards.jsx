@@ -1,5 +1,5 @@
-// 📄 src/pages/admin-wards.jsx
 import React, { useEffect, useState } from "react";
+import { toast } from "react-toastify";
 import { supabase } from "../lib/supabaseClient";
 
 export default function AdminWards() {
@@ -8,40 +8,70 @@ export default function AdminWards() {
   const [newWardName, setNewWardName] = useState("");
   const [selectedHospitalId, setSelectedHospitalId] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editingName, setEditingName] = useState("");
+  const [editingHospitalId, setEditingHospitalId] = useState("");
 
   useEffect(() => {
-    fetchWards();
     fetchHospitals();
+    fetchWards();
   }, []);
 
   const fetchHospitals = async () => {
-    const { data } = await supabase.from("hospitals").select("id, name").order("name");
-    if (data) setHospitals(data);
+    const { data, error } = await supabase
+      .from("hospitals")
+      .select("id, name")
+      .order("name");
+    if (error) toast.error("โหลดรายชื่อโรงพยาบาลล้มเหลว");
+    else setHospitals(data);
   };
 
   const fetchWards = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("wards")
       .select("id, name, hospital_id, hospitals(name)")
       .order("name");
-    if (data) setWards(data);
+    if (error) toast.error("โหลดวอร์ดล้มเหลว");
+    else setWards(data);
   };
 
   const addWard = async () => {
-    if (!newWardName.trim() || !selectedHospitalId) return;
-    await supabase.from("wards").insert({ name: newWardName, hospital_id: selectedHospitalId });
-    setNewWardName("");
-    fetchWards();
+    if (!newWardName.trim() || !selectedHospitalId) {
+      toast.warn("กรุณากรอกชื่อวอร์ดและเลือกโรงพยาบาล");
+      return;
+    }
+    const { error } = await supabase.from("wards").insert({
+      name: newWardName,
+      hospital_id: selectedHospitalId,
+    });
+    if (error) toast.error("เพิ่มวอร์ดไม่สำเร็จ");
+    else {
+      toast.success("เพิ่มวอร์ดแล้ว");
+      setNewWardName("");
+      setSelectedHospitalId("");
+      fetchWards();
+    }
   };
 
-  const updateWard = async (id, name) => {
-    await supabase.from("wards").update({ name }).eq("id", id);
-    fetchWards();
+  const updateWard = async (id) => {
+    const { error } = await supabase
+      .from("wards")
+      .update({ name: editingName, hospital_id: editingHospitalId })
+      .eq("id", id);
+    if (error) toast.error("บันทึกไม่สำเร็จ");
+    else {
+      toast.success("บันทึกสำเร็จ");
+      setEditingId(null);
+      fetchWards();
+    }
   };
 
   const deleteWard = async (id) => {
-    if (confirm("ยืนยันลบวอร์ดนี้?")) {
-      await supabase.from("wards").delete().eq("id", id);
+    if (!confirm("ยืนยันลบวอร์ดนี้?")) return;
+    const { error } = await supabase.from("wards").delete().eq("id", id);
+    if (error) toast.error("ลบไม่สำเร็จ");
+    else {
+      toast.success("ลบแล้ว");
       fetchWards();
     }
   };
@@ -52,7 +82,7 @@ export default function AdminWards() {
   );
 
   return (
-    <div className="p-4">
+    <div className="p-4 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">🏥 จัดการวอร์ด</h1>
 
       <div className="mb-4 flex gap-2 flex-wrap items-center">
@@ -80,14 +110,17 @@ export default function AdminWards() {
           value={newWardName}
           onChange={(e) => setNewWardName(e.target.value)}
         />
-        <button onClick={addWard} className="bg-green-600 text-white px-3 py-1 rounded">
+        <button
+          onClick={addWard}
+          className="bg-green-600 text-white px-3 py-1 rounded"
+        >
           ➕ เพิ่มวอร์ด
         </button>
       </div>
 
       <table className="table-auto border-collapse w-full">
         <thead>
-          <tr>
+          <tr className="bg-gray-100">
             <th className="border px-2 py-1">ชื่อวอร์ด</th>
             <th className="border px-2 py-1">โรงพยาบาล</th>
             <th className="border px-2 py-1">จัดการ</th>
@@ -97,20 +130,69 @@ export default function AdminWards() {
           {filtered.map((w) => (
             <tr key={w.id}>
               <td className="border px-2 py-1">
-                <input
-                  className="border px-2 py-1 w-full"
-                  value={w.name}
-                  onChange={(e) => updateWard(w.id, e.target.value)}
-                />
+                {editingId === w.id ? (
+                  <input
+                    className="border px-2 py-1 w-full"
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                  />
+                ) : (
+                  w.name
+                )}
               </td>
-              <td className="border px-2 py-1">{w.hospitals?.name}</td>
               <td className="border px-2 py-1">
-                <button
-                  onClick={() => deleteWard(w.id)}
-                  className="text-red-600 hover:underline"
-                >
-                  ลบ
-                </button>
+                {editingId === w.id ? (
+                  <select
+                    value={editingHospitalId}
+                    onChange={(e) => setEditingHospitalId(e.target.value)}
+                    className="border px-2 py-1 w-full"
+                  >
+                    {hospitals.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  w.hospitals?.name || ""
+                )}
+              </td>
+              <td className="border px-2 py-1 whitespace-nowrap">
+                {editingId === w.id ? (
+                  <>
+                    <button
+                      onClick={() => updateWard(w.id)}
+                      className="bg-blue-600 text-white px-2 py-1 rounded mr-1"
+                    >
+                      ✅
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="text-gray-600"
+                    >
+                      ✖
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setEditingId(w.id);
+                        setEditingName(w.name);
+                        setEditingHospitalId(w.hospital_id);
+                      }}
+                      className="text-blue-600 hover:underline mr-2"
+                    >
+                      แก้ไข
+                    </button>
+                    <button
+                      onClick={() => deleteWard(w.id)}
+                      className="text-red-600 hover:underline"
+                    >
+                      ลบ
+                    </button>
+                  </>
+                )}
               </td>
             </tr>
           ))}
