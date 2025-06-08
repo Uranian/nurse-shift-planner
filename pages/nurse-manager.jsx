@@ -27,6 +27,26 @@ export default function NurseManagerPage() {
   const [wards, setWards] = useState([]);
   const [hospitals, setHospitals] = useState([]);
   const [editId, setEditId] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null); // 👈 เพิ่มบนสุดก่อน useEffect
+
+  useEffect(() => {
+    const stored = localStorage.getItem("logged_in_user");
+    if (stored) {
+      const user = JSON.parse(stored);
+      setCurrentUser(user);
+
+      // ตั้งค่า hospital_id และ ward_id ตาม user
+      setFormData((prev) => ({
+        ...prev,
+        hospital_id: user.hospital_id || "",
+        ward_id: user.ward_id || "",
+      }));
+    }
+
+    fetchHospitals();
+    fetchWards();
+    fetchNurses();
+  }, []);
 
   useEffect(() => {
     fetchHospitals();
@@ -34,14 +54,39 @@ export default function NurseManagerPage() {
     fetchNurses();
   }, []);
 
+  useEffect(() => {
+    if (currentUser) {
+      fetchWards();
+    }
+  }, [formData.hospital_id]);
+
   async function fetchHospitals() {
     const { data } = await supabase.from("hospitals").select();
     setHospitals(data);
   }
 
   async function fetchWards() {
-    const { data } = await supabase.from("wards").select();
-    setWards(data);
+    let query = supabase.from("wards").select();
+    //currentUser.hospital_id
+
+    if (currentUser?.role !== "admin") {
+      if (currentUser?.user_type === "หัวหน้าพยาบาล") {
+        if (formData.hospital_id) {
+          query = query.eq("hospital_id", formData.hospital_id);
+        } else {
+          setWards([]); // ยังไม่ได้เลือกโรงพยาบาล
+          return;
+        }
+      } else if (currentUser?.user_type === "หัวหน้าวอร์ด") {
+        query = query.eq("id", currentUser.ward_id);
+      } else {
+        setWards([]); // คนอื่นไม่ให้เลือกวอร์ด
+        return;
+      }
+    }
+
+    const { data } = await query;
+    setWards(data || []);
   }
 
   async function fetchNurses() {
@@ -201,6 +246,7 @@ export default function NurseManagerPage() {
             setFormData({ ...formData, hospital_id: e.target.value })
           }
           className="border px-2 py-1"
+          disabled={currentUser?.role !== "admin"} // ✅ ใส่ตรงนี้
         >
           <option value="">เลือกโรงพยาบาล</option>
           {hospitals.map((h) => (
@@ -215,6 +261,10 @@ export default function NurseManagerPage() {
             setFormData({ ...formData, ward_id: e.target.value })
           }
           className="border px-2 py-1"
+          disabled={
+            currentUser?.role !== "admin" &&
+            currentUser?.user_type !== "หัวหน้าพยาบาล"
+          } // ❗ ห้ามให้หัวหน้าวอร์ดแก้
         >
           <option value="">เลือกวอร์ด</option>
           {wards.map((w) => (
@@ -223,6 +273,7 @@ export default function NurseManagerPage() {
             </option>
           ))}
         </select>
+
         <label className="flex items-center space-x-2">
           <input
             type="checkbox"

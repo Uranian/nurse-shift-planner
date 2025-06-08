@@ -8,6 +8,7 @@ import Link from "next/link";
 import { toast } from "react-toastify";
 import Swal from "sweetalert2";
 import { useRouter } from "next/router"; // เพิ่ม
+import { DEFAULT_HOSPITAL_ID, DEFAULT_WARD_ID } from "../config";
 import "dayjs/locale/th";
 dayjs.locale("th");
 
@@ -38,13 +39,29 @@ function ShiftPlanner() {
   const [nurseList, setNurseList] = useState([]);
   const [nurseMap, setNurseMap] = useState({});
 
-  const [hospitalId, setHospitalId] = useState(null);
-  const [wardId, setWardId] = useState(null);
+  const [hospitalId, setHospitalId] = useState(DEFAULT_HOSPITAL_ID);
+  const [wardId, setWardId] = useState(DEFAULT_WARD_ID);
+  const [currentUser, setCurrentUser] = useState(null);
 
   const [viewingPlan, setViewingPlan] = useState(null); // ข้อมูลตารางเวรที่กำลังดู
   const [viewingAssignments, setViewingAssignments] = useState({});
 
   const lastWarnings = useRef(new Set());
+
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("logged_in_user");
+    if (stored) {
+      const user = JSON.parse(stored);
+      setCurrentUser(user);
+      setHospitalId(user.hospital_id);
+      setWardId(user.ward_id);
+    } else {
+      setHospitalId(DEFAULT_HOSPITAL_ID);
+      setWardId(DEFAULT_WARD_ID);
+    }
+  }, []);
 
   const viewPlanDetails = async (planId, name) => {
     const { data, error } = await supabase
@@ -238,7 +255,7 @@ function ShiftPlanner() {
 
     loadNurses();
   }, [hospitalId, wardId]);
-  
+
   useEffect(() => {
     if (!hospitalId || !wardId) return;
 
@@ -803,6 +820,28 @@ function ShiftPlanner() {
               🛠️ แผงควบคุมระบบ
             </button>
           </Link>
+          {!currentUser ? (
+            <button
+              onClick={() => router.push("/login")}
+              className="bg-blue-500 text-white px-4 py-2 rounded"
+            >
+              🔐 เข้าสู่ระบบ
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                localStorage.removeItem("logged_in_user");
+                setCurrentUser(null); // ลบสถานะผู้ใช้ใน state
+                setHospitalId(DEFAULT_HOSPITAL_ID); // กลับไปใช้โรงพยาบาลตัวอย่าง
+                setWardId(DEFAULT_WARD_ID);
+                // router.push("/login"); // ย้อนกลับไปหน้าล็อกอิน
+              }}
+              className="bg-red-500 text-white px-4 py-2 rounded"
+            >
+              ออกจากระบบ
+            </button>
+          )}
+
           {/* ⚠️ ปุ่มล้างระบบ - ใช้ชั่วคราวสำหรับการทดสอบ */}
           {/* <button
             onClick={() => {
