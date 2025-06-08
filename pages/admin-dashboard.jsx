@@ -57,28 +57,29 @@ export default function AdminDashboard() {
         <button
           className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow"
           onClick={() => {
-            if (isHeadNurse) {
+            if (isHeadNurse || currentUser?.role === "admin") {
               router.push("/nurse-manager");
             } else {
               toast.warn(
-                "❌ คุณไม่มีสิทธิ์ใช้งานหน้านี้ เพราะคุณไม่ใช่หัวหน้าวอร์ด"
+                "❌ คุณไม่มีสิทธิ์ใช้งานหน้านี้ เพราะคุณไม่ใช่หัวหน้าวอร์ด/หัวหน้าพยาบาล"
               );
             }
           }}
         >
           🧑‍⚕️ พยาบาล
         </button>
+
         <Link href="/admin-users">
           <button className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow">
             👤 ผู้ใช้
           </button>
         </Link>
-        {/* 
+
         <Link href="/system-settings">
           <button className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow">
             ⚙️ ตั้งค่าระบบ
           </button>
-        </Link> */}
+        </Link>
       </div>
     </div>
   );

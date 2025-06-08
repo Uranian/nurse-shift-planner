@@ -8,7 +8,12 @@ import Link from "next/link";
 import { toast } from "react-toastify";
 import Swal from "sweetalert2";
 import { useRouter } from "next/router"; // เพิ่ม
-import { DEFAULT_HOSPITAL_ID, DEFAULT_WARD_ID } from "../config";
+import {
+  DEFAULT_HOSPITAL_ID,
+  DEFAULT_WARD_ID,
+  DEFAULT_HOSPITAL_NAME,
+  DEFAULT_WARD_NAME,
+} from "../config";
 import "dayjs/locale/th";
 dayjs.locale("th");
 
@@ -39,29 +44,17 @@ function ShiftPlanner() {
   const [nurseList, setNurseList] = useState([]);
   const [nurseMap, setNurseMap] = useState({});
 
-  const [hospitalId, setHospitalId] = useState(DEFAULT_HOSPITAL_ID);
-  const [wardId, setWardId] = useState(DEFAULT_WARD_ID);
+  const [hospitalId, setHospitalId] = useState(null);
+  const [wardId, setWardId] = useState(null);
+  const [hospitalName, setHospitalName] = useState("");
+  const [wardName, setWardName] = useState("");
+
   const [currentUser, setCurrentUser] = useState(null);
 
   const [viewingPlan, setViewingPlan] = useState(null); // ข้อมูลตารางเวรที่กำลังดู
   const [viewingAssignments, setViewingAssignments] = useState({});
 
   const lastWarnings = useRef(new Set());
-
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const stored = localStorage.getItem("logged_in_user");
-    if (stored) {
-      const user = JSON.parse(stored);
-      setCurrentUser(user);
-      setHospitalId(user.hospital_id);
-      setWardId(user.ward_id);
-    } else {
-      setHospitalId(DEFAULT_HOSPITAL_ID);
-      setWardId(DEFAULT_WARD_ID);
-    }
-  }, []);
 
   const viewPlanDetails = async (planId, name) => {
     const { data, error } = await supabase
@@ -212,20 +205,60 @@ function ShiftPlanner() {
     }
   };
 
+  useEffect(() => {
+    const storedUser = localStorage.getItem("logged_in_user");
+    if (storedUser) {
+      setCurrentUser(JSON.parse(storedUser));
+    }
+  }, []);
+
   // 🌐 โหลด context จาก localStorage
   useEffect(() => {
-    const prefs = JSON.parse(localStorage.getItem("user_context"));
-    if (!prefs || !prefs.hospital_id || !prefs.ward_id) {
-      router.push("/system-settings");
-      return;
+    const raw = localStorage.getItem("shift_planner_context");
+    try {
+      const prefs = raw ? JSON.parse(raw) : null;
+      console.log("📦 shift_planner_context:", prefs);
+      if (prefs) {
+        console.log("🏥 hospitalId =", prefs.hospital_id);
+        console.log("🏥 hospital_name =", prefs.hospital_name);
+      }
+      const hospital_id = prefs?.hospital_id || DEFAULT_HOSPITAL_ID;
+      const ward_id = prefs?.ward_id || DEFAULT_WARD_ID;
+      const hospital_name = prefs?.hospital_name || DEFAULT_HOSPITAL_NAME;
+      const ward_name = prefs?.ward_name || DEFAULT_WARD_NAME;
+
+      setHospitalId(hospital_id);
+      setWardId(ward_id);
+      setHospitalName(hospital_name);
+      setWardName(ward_name);
+
+      // เซฟกลับด้วย ถ้ายังไม่มีใน localStorage
+      if (!prefs) {
+        const defaultContext = {
+          hospital_id,
+          ward_id,
+          hospital_name,
+          ward_name,
+        };
+        localStorage.setItem(
+          "shift_planner_context",
+          JSON.stringify(defaultContext)
+        );
+      }
+    } catch (e) {
+      console.error("⚠️ อ่าน shift_planner_context ไม่ได้:", e);
     }
-    setHospitalId(prefs.hospital_id);
-    setWardId(prefs.ward_id);
   }, []);
 
   useEffect(() => {
     const loadNurses = async () => {
-      if (!hospitalId || !wardId) return; // ✅ ตรวจอีกครั้ง
+      console.log("📌 hospitalId =", hospitalId);
+      console.log("📌 wardId =", wardId);
+
+      if (!hospitalId || !wardId) {
+        console.warn("❌ ยังไม่มี hospitalId หรือ wardId");
+        return;
+      }
 
       const { data, error } = await supabase
         .from("nurses")
@@ -768,18 +801,8 @@ function ShiftPlanner() {
 
         {hospitalId && wardId && (
           <div className="text-sm text-gray-600">
-            🏥 โรงพยาบาล:{" "}
-            <strong>
-              {localStorage.getItem("user_context")
-                ? JSON.parse(localStorage.getItem("user_context")).hospital_name
-                : hospitalId}
-            </strong>{" "}
-            | 🏬 วอร์ด:{" "}
-            <strong>
-              {localStorage.getItem("user_context")
-                ? JSON.parse(localStorage.getItem("user_context")).ward_name
-                : wardId}
-            </strong>
+            🏥 โรงพยาบาล: <strong>{hospitalName}</strong> | 🏬 วอร์ด:{" "}
+            <strong>{wardName}</strong>
           </div>
         )}
 
@@ -841,13 +864,22 @@ function ShiftPlanner() {
               ออกจากระบบ
             </button>
           )}
-
-          {/* ⚠️ ปุ่มล้างระบบ - ใช้ชั่วคราวสำหรับการทดสอบ */}
           {/* <button
             onClick={() => {
-              localStorage.removeItem("user_context");
-              toast.error("⚠️ ล้างการตั้งค่าเรียบร้อยแล้ว กำลังโหลดใหม่...");
-              window.location.reload();
+              const defaultContext = {
+                hospital_id: DEFAULT_HOSPITAL_ID,
+                ward_id: DEFAULT_WARD_ID,
+                hospital_name: DEFAULT_HOSPITAL_NAME,
+                ward_name: DEFAULT_WARD_NAME,
+              };
+              localStorage.setItem(
+                "shift_planner_context",
+                JSON.stringify(defaultContext)
+              );
+              toast.success(
+                "✅ รีเซ็ตการตั้งค่าเรียบร้อยแล้ว กำลังกลับไปหน้าจัดเวร..."
+              );
+              window.location.href = "/shift-planner"; // ไปหน้า shift-planner ทันที
             }}
             className="px-3 py-2 bg-red-500 text-white rounded"
           >

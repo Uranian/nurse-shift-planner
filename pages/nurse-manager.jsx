@@ -34,68 +34,102 @@ export default function NurseManagerPage() {
     if (stored) {
       const user = JSON.parse(stored);
       setCurrentUser(user);
-
-      // ตั้งค่า hospital_id และ ward_id ตาม user
       setFormData((prev) => ({
         ...prev,
         hospital_id: user.hospital_id || "",
         ward_id: user.ward_id || "",
       }));
     }
-
-    fetchHospitals();
-    fetchWards();
-    fetchNurses();
   }, []);
 
   useEffect(() => {
+    if (!currentUser) return;
     fetchHospitals();
-    fetchWards();
     fetchNurses();
-  }, []);
+  }, [currentUser]);
 
+  // ✅ โหลดวอร์ดใหม่เมื่อ hospital_id หรือ currentUser เปลี่ยน
   useEffect(() => {
-    if (currentUser) {
-      fetchWards();
-    }
-  }, [formData.hospital_id]);
+    if (!currentUser) return;
 
-  async function fetchHospitals() {
-    const { data } = await supabase.from("hospitals").select();
-    setHospitals(data);
-  }
-
-  async function fetchWards() {
     let query = supabase.from("wards").select();
-    //currentUser.hospital_id
 
-    if (currentUser?.role !== "admin") {
-      if (currentUser?.user_type === "หัวหน้าพยาบาล") {
-        if (formData.hospital_id) {
-          query = query.eq("hospital_id", formData.hospital_id);
-        } else {
-          setWards([]); // ยังไม่ได้เลือกโรงพยาบาล
-          return;
-        }
-      } else if (currentUser?.user_type === "หัวหน้าวอร์ด") {
-        query = query.eq("id", currentUser.ward_id);
+    if (currentUser.role === "admin") {
+      if (formData.hospital_id) {
+        query = query.eq("hospital_id", formData.hospital_id);
       } else {
-        setWards([]); // คนอื่นไม่ให้เลือกวอร์ด
+        setWards([]); // ยังไม่เลือกโรงพยาบาล
         return;
       }
+    } else if (currentUser.user_type === "หัวหน้าพยาบาล") {
+      query = query.eq("hospital_id", currentUser.hospital_id);
+    } else if (currentUser.user_type === "หัวหน้าวอร์ด") {
+      query = query.eq("id", currentUser.ward_id);
+    } else {
+      setWards([]);
+      return;
     }
 
-    const { data } = await query;
-    setWards(data || []);
+    query.then(({ data, error }) => {
+      if (error) console.error("Ward fetch error", error);
+      setWards(data || []);
+    });
+  }, [formData.hospital_id, currentUser]);
+
+  async function fetchHospitals() {
+    if (!currentUser) return;
+
+    let query = supabase.from("hospitals").select();
+
+    if (currentUser.role !== "admin") {
+      query = query.eq("id", currentUser.hospital_id);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("❌ Hospital fetch error:", error);
+      setHospitals([]);
+    } else {
+      setHospitals(data || []);
+    }
   }
+
+  // async function fetchNurses() {
+  //   const { data, error } = await supabase.from("nurses").select("*");
+
+  //   console.log("🧪 test load nurses:", data);
+  //   setNurses(data || []);
+  // }
 
   async function fetchNurses() {
     setLoading(true);
-    const { data } = await supabase
-      .from("nurses")
-      .select("*")
-      .order("display_order");
-    setNurses(data);
+
+    let query = supabase.from("nurses").select("*").order("display_order");
+
+    if (currentUser?.role !== "admin") {
+      if (currentUser?.user_type === "หัวหน้าพยาบาล") {
+        query = query.eq("hospital_id", currentUser.hospital_id);
+      } else if (currentUser?.user_type === "หัวหน้าวอร์ด") {
+        query = query
+          .eq("hospital_id", currentUser.hospital_id)
+          .eq("ward_id", currentUser.ward_id);
+      } else {
+        // ป้องกันการโหลดของพยาบาลทั่วไป
+        query = query.eq("id", ""); // ✴️ ไม่ตรงกับใครเลย
+      }
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("❌ fetchNurses error:", error);
+      toast.error("เกิดข้อผิดพลาดในการโหลดรายชื่อพยาบาล");
+      setNurses([]);
+    } else {
+      setNurses(data || []);
+    }
+
     setLoading(false);
   }
 
@@ -186,12 +220,12 @@ export default function NurseManagerPage() {
         className="border px-3 py-1 mb-3 w-full"
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4 bg-white p-4 text-black">
         <input
           placeholder="ชื่อเรียก (ชื่อเล่น)"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          className="border px-2 py-1"
+          className="border px-2 py-1 bg-white text-black"
         />
 
         <input
@@ -200,7 +234,7 @@ export default function NurseManagerPage() {
           onChange={(e) =>
             setFormData({ ...formData, first_name: e.target.value })
           }
-          className="border px-2 py-1"
+          className="border px-2 py-1 bg-white text-black"
         />
         <input
           placeholder="นามสกุล"
@@ -208,7 +242,7 @@ export default function NurseManagerPage() {
           onChange={(e) =>
             setFormData({ ...formData, last_name: e.target.value })
           }
-          className="border px-2 py-1"
+          className="border px-2 py-1 bg-white text-black"
         />
         <input
           placeholder="ตำแหน่ง"
@@ -216,7 +250,7 @@ export default function NurseManagerPage() {
           onChange={(e) =>
             setFormData({ ...formData, position: e.target.value })
           }
-          className="border px-2 py-1"
+          className="border px-2 py-1 bg-white text-black"
         />
         <input
           placeholder="คุณวุฒิ"
@@ -224,13 +258,13 @@ export default function NurseManagerPage() {
           onChange={(e) =>
             setFormData({ ...formData, qualification: e.target.value })
           }
-          className="border px-2 py-1"
+          className="border px-2 py-1 bg-white text-black"
         />
         <input
           placeholder="เบอร์โทร"
           value={formData.phone}
           onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-          className="border px-2 py-1"
+          className="border px-2 py-1 bg-white text-black"
         />
         <input
           placeholder="LINE ID"
@@ -238,14 +272,15 @@ export default function NurseManagerPage() {
           onChange={(e) =>
             setFormData({ ...formData, line_id: e.target.value })
           }
-          className="border px-2 py-1"
+          className="border px-2 py-1 bg-white text-black"
         />
+
         <select
           value={formData.hospital_id}
           onChange={(e) =>
             setFormData({ ...formData, hospital_id: e.target.value })
           }
-          className="border px-2 py-1"
+          className="border px-2 py-1 bg-white text-black"
           disabled={currentUser?.role !== "admin"} // ✅ ใส่ตรงนี้
         >
           <option value="">เลือกโรงพยาบาล</option>
@@ -255,16 +290,17 @@ export default function NurseManagerPage() {
             </option>
           ))}
         </select>
+
         <select
           value={formData.ward_id}
           onChange={(e) =>
             setFormData({ ...formData, ward_id: e.target.value })
           }
-          className="border px-2 py-1"
+          className="border px-2 py-1 bg-white text-black"
           disabled={
             currentUser?.role !== "admin" &&
             currentUser?.user_type !== "หัวหน้าพยาบาล"
-          } // ❗ ห้ามให้หัวหน้าวอร์ดแก้
+          }
         >
           <option value="">เลือกวอร์ด</option>
           {wards.map((w) => (
@@ -273,43 +309,53 @@ export default function NurseManagerPage() {
             </option>
           ))}
         </select>
+        <div className="flex items-center space-x-4">
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              checked={formData.is_active_for_shift}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  is_active_for_shift: e.target.checked,
+                })
+              }
+            />
+            <span>ใช้งานในตารางเวร</span>
+          </label>
 
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={formData.is_active_for_shift}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                is_active_for_shift: e.target.checked,
-              })
-            }
-          />
-          <span>ใช้งานในตารางเวร</span>
-        </label>
-        <label className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            checked={formData.is_active_for_massage}
-            onChange={(e) =>
-              setFormData({
-                ...formData,
-                is_active_for_massage: e.target.checked,
-              })
-            }
-          />
-          <span>ใช้งานในนัดนวด</span>
-        </label>
+          <div className="flex flex-col">
+            <label className="mb-1 text-sm font-medium whitespace-nowrap">
+              ลำดับแสดงผล
+            </label>
+            <input
+              type="number"
+              placeholder="ลำดับ"
+              value={formData.display_order}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  display_order: Number(e.target.value),
+                })
+              }
+              className="border px-2 py-1 w-24"
+            />
+          </div>
 
-        <input
-          type="number"
-          placeholder="ลำดับแสดงผล"
-          value={formData.display_order}
-          onChange={(e) =>
-            setFormData({ ...formData, display_order: Number(e.target.value) })
-          }
-          className="border px-2 py-1"
-        />
+          <label className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              checked={formData.is_active_for_massage}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  is_active_for_massage: e.target.checked,
+                })
+              }
+            />
+            <span>ใช้งานในนัดนวด</span>
+          </label>
+        </div>
       </div>
 
       <button

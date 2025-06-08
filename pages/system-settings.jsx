@@ -10,39 +10,69 @@ export default function SystemSettingsPage() {
   const [wards, setWards] = useState([]);
   const [selectedHospital, setSelectedHospital] = useState("");
   const [selectedWard, setSelectedWard] = useState("");
+
+  const [currentUser, setCurrentUser] = useState(null);
+
   const router = useRouter();
 
   useEffect(() => {
-    const prefs = JSON.parse(localStorage.getItem("user_context"));
-    if (prefs) {
-      setSelectedHospital(prefs.hospital_id);
-      setSelectedWard(prefs.ward_id);
+    const stored = localStorage.getItem("logged_in_user");
+    if (stored) {
+      const user = JSON.parse(stored);
+      setCurrentUser(user);
+      setSelectedHospital(user.hospital_id);
+      setSelectedWard(user.ward_id);
+    }
+    const shiftPlanner = localStorage.getItem("shift_planner_context");
+    if (shiftPlanner) {
+      const context = JSON.parse(shiftPlanner);
+      setSelectedHospital(context.hospital_id); // ถ้าจะให้เลือก รพ. ตาม context
+      setSelectedWard(context.ward_id); // ✅ เซตค่าเริ่มต้นของวอร์ดจาก shift_planner_context
     }
   }, []);
 
   useEffect(() => {
     const fetchHospitals = async () => {
-      const { data, error } = await supabase
-        .from("hospitals")
-        .select("id, name")
-        .order("name");
+      if (!currentUser) return;
+
+      const query = supabase.from("hospitals").select("id, name").order("name");
+
+      if (currentUser.role !== "admin") {
+        query.eq("id", currentUser.hospital_id);
+      }
+
+      const { data, error } = await query;
       if (!error) setHospitals(data);
     };
+
     fetchHospitals();
-  }, []);
+  }, [currentUser]);
 
   useEffect(() => {
     const fetchWards = async () => {
-      if (!selectedHospital) return;
-      const { data, error } = await supabase
-        .from("wards")
-        .select("id, name")
-        .eq("hospital_id", selectedHospital)
-        .order("name");
+      if (!selectedHospital || !currentUser) return;
+
+      let query = supabase.from("wards").select("id, name").order("name");
+
+      if (currentUser.role !== "admin") {
+        if (currentUser.user_type === "หัวหน้าพยาบาล") {
+          query = query.eq("hospital_id", selectedHospital);
+        } else if (currentUser.user_type === "หัวหน้าวอร์ด") {
+          query = query.eq("id", currentUser.ward_id);
+        } else {
+          setWards([]);
+          return;
+        }
+      } else {
+        query = query.eq("hospital_id", selectedHospital);
+      }
+
+      const { data, error } = await query;
       if (!error) setWards(data);
     };
+
     fetchWards();
-  }, [selectedHospital]);
+  }, [selectedHospital, currentUser]);
 
   const saveSettings = () => {
     if (!selectedHospital || !selectedWard) {
@@ -54,7 +84,7 @@ export default function SystemSettingsPage() {
     const ward = wards.find((w) => w.id === selectedWard);
 
     localStorage.setItem(
-      "user_context",
+      "shift_planner_context",
       JSON.stringify({
         hospital_id: selectedHospital,
         hospital_name: hospital?.name || "",
@@ -92,12 +122,14 @@ export default function SystemSettingsPage() {
         ))}
       </select>
 
-      <button
-        className="w-full bg-gray-600 text-white py-2 rounded mb-6"
-        onClick={() => router.push("/admin-hospitals")}
-      >
-        🏥 จัดการโรงพยาบาล
-      </button>
+      {currentUser?.role === "admin" && (
+        <button
+          className="w-full bg-gray-600 text-white py-2 rounded mb-6"
+          onClick={() => router.push("/admin-hospitals")}
+        >
+          🏥 จัดการโรงพยาบาล
+        </button>
+      )}
 
       <label className="block mb-2 font-semibold">
         🏬 เลือกวอร์ด สำหรับจัดตารางเวรพยาบาล (ต้องเลือก)
@@ -106,7 +138,9 @@ export default function SystemSettingsPage() {
         className="w-full border p-2 rounded mb-4 bg-white text-black"
         value={selectedWard}
         onChange={(e) => setSelectedWard(e.target.value)}
-        disabled={!selectedHospital}
+        disabled={
+          !selectedHospital || currentUser?.user_type === "หัวหน้าวอร์ด"
+        }
       >
         <option value="">-- เลือกวอร์ด --</option>
         {wards.map((w) => (
@@ -116,12 +150,14 @@ export default function SystemSettingsPage() {
         ))}
       </select>
 
-      <button
-        className="w-full bg-gray-600 text-white py-2 rounded mb-6"
-        onClick={() => router.push("/admin-wards")}
-      >
-        🏬 จัดการวอร์ด
-      </button>
+      {currentUser?.role === "admin" && (
+        <button
+          className="w-full bg-gray-600 text-white py-2 rounded mb-6"
+          onClick={() => router.push("/admin-wards")}
+        >
+          🏬 จัดการวอร์ด
+        </button>
+      )}
 
       <button
         onClick={saveSettings}

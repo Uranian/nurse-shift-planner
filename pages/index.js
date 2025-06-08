@@ -1,11 +1,13 @@
-// 📄 pages/index.js
+// 📄 pages/index.jsx
 import { useEffect } from "react";
 import { useRouter } from "next/router";
 
 export default function Home() {
   const router = useRouter();
+
   useEffect(() => {
-    router.push("/shift-planner");
+    router.replace("/shift-planner");
   }, []);
-  return null;
+
+  return null; // หรือแสดงข้อความโหลด
 }
