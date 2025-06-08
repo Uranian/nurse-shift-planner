@@ -29,6 +29,9 @@ export default function NurseManagerPage() {
   const [editId, setEditId] = useState(null);
   const [currentUser, setCurrentUser] = useState(null); // 👈 เพิ่มบนสุดก่อน useEffect
 
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
+
   useEffect(() => {
     const stored = localStorage.getItem("logged_in_user");
     if (stored) {
@@ -195,11 +198,16 @@ export default function NurseManagerPage() {
     });
   }
 
-  async function deleteNurse(id) {
-    if (confirm("ลบข้อมูลพยาบาลนี้?")) {
-      await supabase.from("nurses").delete().eq("id", id);
-      fetchNurses();
-    }
+  function confirmDeleteNurse(id) {
+    setDeleteId(id);
+    setShowConfirm(true);
+  }
+
+  async function deleteNurseConfirmed() {
+    await supabase.from("nurses").delete().eq("id", deleteId);
+    setShowConfirm(false);
+    setDeleteId(null);
+    fetchNurses();
   }
 
   const filteredNurses = nurses.filter((n) =>
@@ -433,10 +441,9 @@ export default function NurseManagerPage() {
                   >
                     ✏️ แก้ไข
                   </button>
-
                   <button
-                    onClick={() => deleteNurse(n.id)}
-                    className="text-red-600"
+                    onClick={() => confirmDeleteNurse(n.id)}
+                    className="text-red-600 hover:underline"
                   >
                     ลบ
                   </button>
@@ -445,6 +452,28 @@ export default function NurseManagerPage() {
             ))}
           </tbody>
         </table>
+      )}
+      {showConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 shadow-lg w-80 text-center">
+            <h2 className="text-lg font-semibold mb-4 text-black">ยืนยันการลบ</h2>
+            <p className="mb-6 text-black">คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลพยาบาลนี้?</p>
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={deleteNurseConfirmed}
+                className="bg-red-600 text-white px-4 py-2 rounded"
+              >
+                ลบ
+              </button>
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="bg-gray-300 text-black px-4 py-2 rounded"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

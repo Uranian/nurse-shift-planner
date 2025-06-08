@@ -9,6 +9,7 @@ export default function AdminUsers() {
   const [hospitals, setHospitals] = useState([]);
   const [wards, setWards] = useState([]);
   const [search, setSearch] = useState("");
+
   const [newUser, setNewUser] = useState({
     username: "",
     email: "",
@@ -22,6 +23,11 @@ export default function AdminUsers() {
 
   const [currentUser, setCurrentUser] = useState(null);
 
+  const [editUser, setEditUser] = useState(null);
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingUserId, setDeletingUserId] = useState(null);
+
   useEffect(() => {
     const stored = localStorage.getItem("logged_in_user");
     if (stored) {
@@ -32,8 +38,6 @@ export default function AdminUsers() {
       fetchData(null);
     }
   }, []);
-
-  const [editUser, setEditUser] = useState(null);
 
   const fetchData = async (user) => {
     let query = supabase
@@ -158,10 +162,16 @@ export default function AdminUsers() {
     fetchData(currentUser);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("ยืนยันลบผู้ใช้นี้?")) return;
-    await supabase.from("profiles").delete().eq("id", id);
-    fetchData();
+  const handleDelete = (id) => {
+    setDeletingUserId(id);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    await supabase.from("profiles").delete().eq("id", deletingUserId);
+    fetchData(currentUser);
+    setShowDeleteModal(false);
+    setDeletingUserId(null);
   };
 
   const filtered = users.filter((u) =>
@@ -426,6 +436,33 @@ export default function AdminUsers() {
           ))}
         </tbody>
       </table>
+
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl w-[90%] max-w-sm">
+            <h2 className="text-xl font-semibold mb-4 text-center text-black">
+              ยืนยันการลบผู้ใช้
+            </h2>
+            <p className="text-center mb-6 text-black">
+              คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้นี้?
+            </p>
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={confirmDelete}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+              >
+                ลบ
+              </button>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="bg-gray-300 hover:bg-gray-400 text-black px-4 py-2 rounded"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

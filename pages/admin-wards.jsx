@@ -15,6 +15,9 @@ export default function AdminWards() {
   const [currentUser, setCurrentUser] = useState(null);
   const [hospitalId, setHospitalId] = useState("");
 
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [deletingWardId, setDeletingWardId] = useState(null);
+
   useEffect(() => {
     const stored = localStorage.getItem("logged_in_user");
     if (stored) {
@@ -134,11 +137,30 @@ export default function AdminWards() {
     }
   };
 
+  const deleteWardConfirmed = async () => {
+    const { error } = await supabase
+      .from("wards")
+      .delete()
+      .eq("id", deletingWardId);
+    if (error) toast.error("ลบไม่สำเร็จ");
+    else {
+      toast.success("ลบแล้ว");
+      fetchWards();
+    }
+    setShowConfirm(false);
+    setDeletingWardId(null);
+  };
+
   const filtered = wards.filter(
     (w) =>
       w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (w.hospital_name || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const confirmDeleteWard = (id) => {
+    setDeletingWardId(id);
+    setShowConfirm(true);
+  };
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
@@ -254,7 +276,7 @@ export default function AdminWards() {
                       แก้ไข
                     </button>
                     <button
-                      onClick={() => deleteWard(w.id)}
+                      onClick={() => confirmDeleteWard(w.id)}
                       className="text-red-600 hover:underline"
                     >
                       ลบ
@@ -266,6 +288,28 @@ export default function AdminWards() {
           ))}
         </tbody>
       </table>
+      {showConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 shadow-xl text-center w-80">
+            <h2 className="text-xl font-semibold mb-4 text-black">ยืนยันการลบ</h2>
+            <p className="mb-6 text-black">คุณแน่ใจหรือไม่ว่าต้องการลบวอร์ดนี้?</p>
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={deleteWardConfirmed}
+                className="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700"
+              >
+                ลบ
+              </button>
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="bg-gray-300 text-black px-4 py-2 rounded hover:bg-gray-400"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

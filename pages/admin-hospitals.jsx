@@ -9,6 +9,9 @@ export default function AdminHospitalsPage() {
   const [editingId, setEditingId] = useState(null);
   const [editingName, setEditingName] = useState("");
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingHospitalId, setDeletingHospitalId] = useState(null);
+
   useEffect(() => {
     fetchHospitals();
   }, []);
@@ -62,6 +65,25 @@ export default function AdminHospitalsPage() {
   }
 
   const filtered = hospitals.filter((h) => h.name.includes(searchTerm));
+
+  function handleDeleteHospital(id) {
+    setDeletingHospitalId(id);
+    setShowDeleteModal(true);
+  }
+
+  async function confirmDeleteHospital() {
+    const { error } = await supabase
+      .from("hospitals")
+      .delete()
+      .eq("id", deletingHospitalId);
+    if (error) toast.error("ลบไม่สำเร็จ");
+    else {
+      toast.success("ลบแล้ว");
+      fetchHospitals();
+    }
+    setShowDeleteModal(false);
+    setDeletingHospitalId(null);
+  }
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
@@ -127,7 +149,7 @@ export default function AdminHospitalsPage() {
                   {h.name}
                 </span>
                 <button
-                  onClick={() => deleteHospital(h.id)}
+                  onClick={() => handleDeleteHospital(h.id)}
                   className="text-red-600 ml-2"
                 >
                   🗑️
@@ -137,6 +159,32 @@ export default function AdminHospitalsPage() {
           </li>
         ))}
       </ul>
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl w-[90%] max-w-sm">
+            <h2 className="text-xl font-semibold mb-4 text-center text-black">
+              ยืนยันการลบ
+            </h2>
+            <p className="text-center mb-6 text-black">
+              คุณแน่ใจหรือไม่ว่าต้องการลบโรงพยาบาลนี้?
+            </p>
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={confirmDeleteHospital}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded"
+              >
+                ลบ
+              </button>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="bg-gray-300 hover:bg-gray-400 text-black px-4 py-2 rounded"
+              >
+                ยกเลิก
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
