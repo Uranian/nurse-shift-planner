@@ -12,27 +12,85 @@ export default function AdminWards() {
   const [editingName, setEditingName] = useState("");
   const [editingHospitalId, setEditingHospitalId] = useState("");
 
+  const [currentUser, setCurrentUser] = useState(null);
+  const [hospitalId, setHospitalId] = useState("");
+
+  useEffect(() => {
+    const stored = localStorage.getItem("logged_in_user");
+    if (stored) {
+      const user = JSON.parse(stored);
+      setCurrentUser(user);
+      setHospitalId(user.hospital_id);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    fetchHospitals();
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!hospitalId) return;
+    const fetchWards = async () => {
+      const { data, error } = await supabase
+        .from("wards")
+        .select("*")
+        .eq("hospital_id", hospitalId)
+        .order("name");
+
+      if (!error) setWards(data);
+    };
+
+    fetchWards();
+  }, [hospitalId]);
+
   useEffect(() => {
     fetchHospitals();
     fetchWards();
   }, []);
 
   const fetchHospitals = async () => {
-    const { data, error } = await supabase
-      .from("hospitals")
-      .select("id, name")
-      .order("name");
+    if (!currentUser) return;
+
+    let query = supabase.from("hospitals").select("id, name").order("name");
+
+    // 👇 กรองเฉพาะของผู้ใช้ ถ้าไม่ใช่ admin
+    if (currentUser.role !== "admin") {
+      query = query.eq("id", currentUser.hospital_id);
+    }
+
+    const { data, error } = await query;
     if (error) toast.error("โหลดรายชื่อโรงพยาบาลล้มเหลว");
-    else setHospitals(data);
+    else {
+      setHospitals(data);
+
+      // ตั้งค่าค่าเริ่มต้นของโรงพยาบาลทันทีถ้ายังไม่มี
+      if (!selectedHospitalId && data.length === 1) {
+        setSelectedHospitalId(data[0].id);
+      }
+    }
   };
 
   const fetchWards = async () => {
-    const { data, error } = await supabase
-      .from("wards")
-      .select("id, name, hospital_id, hospitals(name)")
-      .order("name");
-    if (error) toast.error("โหลดวอร์ดล้มเหลว");
-    else setWards(data);
+    const { data, error } = await supabase.from("wards").select(`
+  id,
+  name,
+  hospital_id,
+  hospitals!fk_wards_hospital (
+    name
+  )
+`);
+
+    if (error) {
+      console.error("❌ load wards error", error);
+      toast.error("โหลดวอร์ดล้มเหลว");
+    } else {
+      const transformed = data.map((w) => ({
+        ...w,
+        hospital_name: w.hospitals?.name || "",
+      }));
+      setWards(transformed);
+    }
   };
 
   const addWard = async () => {
@@ -76,51 +134,61 @@ export default function AdminWards() {
     }
   };
 
-  const filtered = wards.filter((w) =>
-    w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (w.hospitals?.name || "").toLowerCase().includes(searchTerm.toLowerCase())
+  const filtered = wards.filter(
+    (w) =>
+      w.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (w.hospital_name || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">🏥 จัดการวอร์ด</h1>
 
-      <div className="mb-4 flex gap-2 flex-wrap items-center">
-        <input
-          className="border px-2 py-1"
-          placeholder="ค้นหาวอร์ดหรือโรงพยาบาล"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-        <select
-          value={selectedHospitalId}
-          onChange={(e) => setSelectedHospitalId(e.target.value)}
-          className="border px-2 py-1"
-        >
-          <option value="">เลือกโรงพยาบาล</option>
-          {hospitals.map((h) => (
-            <option key={h.id} value={h.id}>
-              {h.name}
-            </option>
-          ))}
-        </select>
-        <input
-          className="border px-2 py-1"
-          placeholder="ชื่อวอร์ดใหม่"
-          value={newWardName}
-          onChange={(e) => setNewWardName(e.target.value)}
-        />
-        <button
-          onClick={addWard}
-          className="bg-green-600 text-white px-3 py-1 rounded"
-        >
-          ➕ เพิ่มวอร์ด
-        </button>
+      <div className="mb-4 flex flex-col gap-2">
+        {/* แถวที่ 1: ช่องค้นหา */}
+        <div className="flex gap-2 flex-wrap items-center">
+          <input
+            className="border px-2 py-1"
+            placeholder="ค้นหาวอร์ดหรือโรงพยาบาล"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        {/* แถวที่ 2: ตัวเลือก รพ. + ชื่อวอร์ดใหม่ + ปุ่ม */}
+        <div className="flex gap-2 flex-wrap items-center">
+          <select
+            value={selectedHospitalId}
+            onChange={(e) => setSelectedHospitalId(e.target.value)}
+            className="border px-2 py-1"
+            disabled={hospitals.length === 1 && currentUser?.role !== "admin"}
+          >
+            <option value="">เลือกโรงพยาบาล</option>
+            {hospitals.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name}
+              </option>
+            ))}
+          </select>
+
+          <input
+            className="border px-2 py-1"
+            placeholder="ชื่อวอร์ดใหม่"
+            value={newWardName}
+            onChange={(e) => setNewWardName(e.target.value)}
+          />
+          <button
+            onClick={addWard}
+            className="bg-green-600 text-white px-3 py-1 rounded"
+          >
+            ➕ เพิ่มวอร์ด
+          </button>
+        </div>
       </div>
 
       <table className="table-auto border-collapse w-full">
         <thead>
-          <tr className="bg-gray-100">
+          <tr className="bg-gray-100 text-black">
             <th className="border px-2 py-1">ชื่อวอร์ด</th>
             <th className="border px-2 py-1">โรงพยาบาล</th>
             <th className="border px-2 py-1">จัดการ</th>
@@ -132,7 +200,7 @@ export default function AdminWards() {
               <td className="border px-2 py-1">
                 {editingId === w.id ? (
                   <input
-                    className="border px-2 py-1 w-full"
+                    className="border px-2 py-1 w-full bg-gray-800 text-white"
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
                   />
@@ -140,12 +208,12 @@ export default function AdminWards() {
                   w.name
                 )}
               </td>
-              <td className="border px-2 py-1">
+              <td className="border px-2 py-1 text-white">
                 {editingId === w.id ? (
                   <select
                     value={editingHospitalId}
                     onChange={(e) => setEditingHospitalId(e.target.value)}
-                    className="border px-2 py-1 w-full"
+                    className="border px-2 py-1 w-full bg-gray-800 text-white"
                   >
                     {hospitals.map((h) => (
                       <option key={h.id} value={h.id}>
@@ -154,7 +222,7 @@ export default function AdminWards() {
                     ))}
                   </select>
                 ) : (
-                  w.hospitals?.name || ""
+                  w.hospital_name || ""
                 )}
               </td>
               <td className="border px-2 py-1 whitespace-nowrap">

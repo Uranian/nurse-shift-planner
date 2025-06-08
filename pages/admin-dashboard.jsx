@@ -49,13 +49,13 @@ export default function AdminDashboard() {
                 </button>
               </Link>
             )}
-            {isAdmin && (
-              <Link href="/admin-wards">
-                <button className="w-full px-4 py-3 rounded shadow bg-gray-700 text-white">
-                  🏬 วอร์ด
-                </button>
-              </Link>
-            )}
+
+            <Link href="/admin-wards">
+              <button className="w-full px-4 py-3 rounded shadow bg-gray-700 text-white">
+                🏬 วอร์ด
+              </button>
+            </Link>
+
             {/* ปุ่มพยาบาล */}
             <button
               className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow"
