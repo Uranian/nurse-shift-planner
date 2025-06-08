@@ -21,11 +21,6 @@ export default function MassagePlannerPage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState(1); // 1, 1.5, 2
   const [bookings, setBookings] = useState([]);
-  const getBookingForSlot = (nurseId, date, time) => {
-    return bookings.find(
-      (b) => b.nurse_id === nurseId && b.date === date && b.start_time === time
-    );
-  };
 
   const isSlotWithinBooking = (nurseId, date, time) => {
     const booking = bookings.find((b) => {
@@ -64,13 +59,7 @@ export default function MassagePlannerPage() {
 
     fetchBookings();
   }, [hospitalId, year, month]);
-
-  const isSlotBooked = (nurseId, date, time) => {
-    return bookings.some(
-      (b) => b.nurse_id === nurseId && b.date === date && b.start_time === time
-    );
-  };
-
+ 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const prefs = JSON.parse(localStorage.getItem("user_context"));
@@ -135,24 +124,11 @@ export default function MassagePlannerPage() {
     ]);
 
     if (error) {
-      toast.error("⚠️ เกิดข้อผิดพลาดในการจอง: " + error.message, { autoClose: 2000 });
+      toast.success("⚠️ เกิดข้อผิดพลาดในการจอง: " + error.message);
     } else {
-      toast.success("🎉 จองสำเร็จ!", { autoClose: 2000 });
+      toast.error("🎉 จองสำเร็จ!");
       setShowModal(false);
-
-      // ✅ โหลด bookings ใหม่ทันทีหลังจอง
-      const startDate = dayjs(`${year}-${month}-01`).format("YYYY-MM-DD");
-      const endDate = dayjs(`${year}-${month}-01`)
-        .endOf("month")
-        .format("YYYY-MM-DD");
-
-      const { data, error: fetchError } = await supabase
-        .from("massage_bookings")
-        .select("id, nurse_id, date, start_time, duration_hours")
-        .gte("date", startDate)
-        .lte("date", endDate);
-
-      if (!fetchError) setBookings(data);
+      // TODO: reload bookings
     }
   }
 
@@ -263,7 +239,7 @@ export default function MassagePlannerPage() {
                                   .delete()
                                   .eq("id", booking.id)
                                   .then(() => {
-                                    toast.info("🗑️ ยกเลิกสำเร็จ", { autoClose: 2000 });
+                                    toast.info("🗑️ ยกเลิกสำเร็จ");
                                     // โหลดใหม่
                                     setBookings((prev) =>
                                       prev.filter((b) => b.id !== booking.id)

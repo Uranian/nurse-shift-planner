@@ -1,11 +1,12 @@
 // 📄 src/pages/shift-planner.jsx
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react"; // ✅ เพิ่ม useRef
 import dayjs from "dayjs";
 import { supabase } from "../lib/supabaseClient";
 import NoSSR from "../components/NoSSR";
 import Link from "next/link";
 import { toast } from "react-toastify";
+import Swal from "sweetalert2";
 import { useRouter } from "next/router"; // เพิ่ม
 import "dayjs/locale/th";
 dayjs.locale("th");
@@ -27,6 +28,10 @@ function ShiftPlanner() {
   const [month, setMonth] = useState(currentMonth);
   const [statusMessage, setStatusMessage] = useState("");
 
+  const [planId, setPlanId] = useState(null);
+  const [shiftPlanName, setShiftPlanName] = useState("");
+  const [editingPlan, setEditingPlan] = useState(false);
+
   const daysInMonth = dayjs(`${year}-${month}-01`).daysInMonth();
   const yearMonth = dayjs(`${year}-${month}-01`).format("YYYY-MM");
 
@@ -36,15 +41,193 @@ function ShiftPlanner() {
   const [hospitalId, setHospitalId] = useState(null);
   const [wardId, setWardId] = useState(null);
 
+  const [viewingPlan, setViewingPlan] = useState(null); // ข้อมูลตารางเวรที่กำลังดู
+  const [viewingAssignments, setViewingAssignments] = useState({});
+
+  const lastWarnings = useRef(new Set());
+
+  const viewPlanDetails = async (planId, name) => {
+    const { data, error } = await supabase
+      .from("nurse_shifts")
+      .select("*")
+      .eq("plan_id", planId);
+
+    if (error || !data) {
+      toast.error("❌ โหลดตารางเวรไม่สำเร็จ");
+      return;
+    }
+
+    const result = {};
+    data.forEach((row) => {
+      const date = row.shift_date;
+      if (!result[date]) result[date] = {};
+      if (!result[date][row.nurse_id]) result[date][row.nurse_id] = [];
+      result[date][row.nurse_id].push(row.shift_type);
+    });
+
+    setViewingAssignments(result);
+    setViewingPlan({ id: planId, name });
+  };
+
+  const loadPlanForEdit = async (planIdToLoad, name) => {
+    const { data, error } = await supabase
+      .from("nurse_shifts")
+      .select("*")
+      .eq("plan_id", planIdToLoad);
+
+    if (error || !data) {
+      toast.error("❌ โหลดข้อมูลไม่สำเร็จ");
+      return;
+    }
+
+    const loaded = {};
+    data.forEach((row) => {
+      const date = row.shift_date;
+      if (!loaded[date]) loaded[date] = {};
+      if (!loaded[date][row.nurse_id]) loaded[date][row.nurse_id] = [];
+      loaded[date][row.nurse_id].push(row.shift_type);
+    });
+
+    setAssignments(loaded);
+    setPlanId(planIdToLoad);
+    setShiftPlanName(name);
+    setEditingPlan(true);
+    setStatusMessage("🛠 กำลังแก้ไขตารางเวรเดิม");
+    setShowPlanDialog(false);
+  };
+
+  const saveToExistingPlan = async () => {
+    if (!planId || !hospitalId || !wardId) {
+      toast.error("❌ ไม่มี plan_id หรือ hospital/ward");
+      return;
+    }
+
+    try {
+      const rows = [];
+      for (const [date, nurses] of Object.entries(assignments)) {
+        for (const [nurse, shiftList] of Object.entries(nurses)) {
+          for (const shift of shiftList) {
+            rows.push({
+              plan_id: planId,
+              nurse_id: nurse,
+              shift_date: date,
+              shift_type: shift,
+              hospital_id: hospitalId,
+              ward_id: wardId,
+            });
+          }
+        }
+      }
+
+      await supabase.from("nurse_shifts").delete().eq("plan_id", planId);
+
+      const { error } = await supabase.from("nurse_shifts").insert(rows);
+      if (error) {
+        toast.error("❌ บันทึกทับตารางเวรเดิมไม่สำเร็จ");
+      } else {
+        toast.success("✅ บันทึกทับตารางเวรเดิมเรียบร้อย");
+      }
+    } catch (e) {
+      toast.error("❌ บันทึกผิดพลาด: " + e.message);
+    }
+  };
+
+  const deletePlan = async (planIdToDelete) => {
+    const result = await Swal.fire({
+      title: "ลบตารางเวรนี้?",
+      text: "คุณจะไม่สามารถกู้คืนข้อมูลได้",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#aaa",
+      confirmButtonText: "🗑 ลบเลย",
+      cancelButtonText: "ยกเลิก",
+    });
+
+    if (!result.isConfirmed) return;
+
+    const { error } = await supabase
+      .from("shift_plans")
+      .delete()
+      .eq("id", planIdToDelete);
+
+    if (error) {
+      toast.error("❌ ลบตารางเวรไม่สำเร็จ");
+    } else {
+      toast.success("🗑 ลบตารางเวรเรียบร้อย");
+      setAvailablePlans((prev) => prev.filter((p) => p.id !== planIdToDelete));
+    }
+  };
+
+  const editPlanName = async (planIdToEdit, oldName) => {
+    const { value: newName } = await Swal.fire({
+      title: "✏️ แก้ไขชื่อตารางเวร",
+      input: "text",
+      inputLabel: "ชื่อใหม่ของตารางเวร",
+      inputValue: oldName,
+      inputPlaceholder: "ระบุชื่อตารางเวรใหม่",
+      showCancelButton: true,
+      confirmButtonText: "💾 บันทึก",
+      cancelButtonText: "ยกเลิก",
+      inputValidator: (value) => {
+        if (!value || value.trim() === "") {
+          return "กรุณาระบุชื่อตารางเวรใหม่";
+        }
+      },
+    });
+
+    if (!newName) return;
+
+    const { error } = await supabase
+      .from("shift_plans")
+      .update({ name: newName.trim() })
+      .eq("id", planIdToEdit);
+
+    if (error) {
+      toast.error("❌ แก้ไขชื่อไม่สำเร็จ");
+    } else {
+      toast.success("✏️ แก้ไขชื่อเรียบร้อย");
+      setAvailablePlans((prev) =>
+        prev.map((p) =>
+          p.id === planIdToEdit ? { ...p, name: newName.trim() } : p
+        )
+      );
+    }
+  };
+
+  // 🌐 โหลด context จาก localStorage
+  useEffect(() => {
+    const prefs = JSON.parse(localStorage.getItem("user_context"));
+    if (!prefs || !prefs.hospital_id || !prefs.ward_id) {
+      router.push("/system-settings");
+      return;
+    }
+    setHospitalId(prefs.hospital_id);
+    setWardId(prefs.ward_id);
+  }, []);
+
   useEffect(() => {
     const loadNurses = async () => {
+      if (!hospitalId || !wardId) return; // ✅ ตรวจอีกครั้ง
+
       const { data, error } = await supabase
         .from("nurses")
         .select("id, name, display_order")
+        .eq("hospital_id", hospitalId)
+        .eq("ward_id", wardId)
+        .eq("is_active_for_shift", true)
         .order("display_order", { ascending: true });
 
-      if (error) {
+      if (error || !data) {
+        console.error(
+          "โหลดรายชื่อพยาบาลผิดพลาด:",
+          error?.message || "ไม่มีข้อมูล"
+        );
         setStatusMessage("⚠️ โหลดรายชื่อพยาบาลไม่สำเร็จ");
+      } else if (data.length === 0) {
+        setStatusMessage("⚠️ ไม่พบรายชื่อพยาบาลในวอร์ดนี้");
+        setNurseList([]);
+        setNurseMap({});
       } else {
         setNurseList(data.map((n) => n.id));
         const map = {};
@@ -54,53 +237,51 @@ function ShiftPlanner() {
     };
 
     loadNurses();
-  }, []);
-
+  }, [hospitalId, wardId]);
+  
   useEffect(() => {
-    const prefs = JSON.parse(localStorage.getItem("user_context"));
-    if (!prefs || !prefs.hospital_id || !prefs.ward_id) {
-      router.push("/system-settings"); // redirect ทันที
-      return;
-    }
+    if (!hospitalId || !wardId) return;
 
-    setHospitalId(prefs.hospital_id);
-    setWardId(prefs.ward_id);
-
-    const init = async () => {
+    const loadPlanId = async () => {
       const { data, error } = await supabase
-        .from("nurses")
-        .select("id, name, display_order")
-        .eq("hospital_id", prefs.hospital_id)
-        .eq("ward_id", prefs.ward_id)
-        .eq("active", true)
-        .order("display_order", { ascending: true });
+        .from("shift_plans")
+        .select("id, name")
+        .eq("hospital_id", hospitalId)
+        .eq("ward_id", wardId)
+        .eq("month", month)
+        .eq("year", year)
+        .limit(1)
+        .maybeSingle();
 
-      if (error) {
-        setStatusMessage("⚠️ โหลดรายชื่อพยาบาลไม่สำเร็จ");
+      if (error || !data) {
+        setPlanId(null);
+        setShiftPlanName("");
+        setStatusMessage("⚠️ ยังไม่มีตารางเวรของเดือนนี้ กรุณาสร้างก่อน");
       } else {
-        setNurseList(data.map((n) => n.id));
-        const map = {};
-        data.forEach((n) => (map[n.id] = n.name));
-        setNurseMap(map);
+        setPlanId(data.id);
+        setShiftPlanName(data.name);
       }
     };
 
-    init();
-  }, []);
+    loadPlanId();
+  }, [hospitalId, wardId, year, month]);
 
   useEffect(() => {
     const fetchFromSupabase = async () => {
+      // 🧼 เคลียร์คำเตือนเดิมทุกครั้งที่เปลี่ยนเดือน
+      lastWarnings.current.clear();
+
       if (!hospitalId || !wardId) return;
       const monthStart = `${yearMonth}-01`;
       const monthEnd = dayjs(monthStart).endOf("month").format("YYYY-MM-DD");
 
+      if (!planId) return;
       const { data, error } = await supabase
         .from("nurse_shifts")
         .select("*")
         .eq("hospital_id", hospitalId)
         .eq("ward_id", wardId)
-        .gte("shift_date", monthStart)
-        .lte("shift_date", monthEnd);
+        .eq("plan_id", planId);
 
       if (error) {
         setStatusMessage("เกิดข้อผิดพลาดในการโหลดข้อมูล");
@@ -128,37 +309,147 @@ function ShiftPlanner() {
     fetchFromSupabase();
   }, [year, month, hospitalId, wardId]);
 
-  const toggleShift = (nurse, day, shift) => {
-    const key = `${yearMonth}-${day.toString().padStart(2, "0")}`;
+  const toggleShift = (nurseId, day, shift) => {
+    const dateKey = `${yearMonth}-${day.toString().padStart(2, "0")}`;
+
+    // 🧼 เคลียร์ warning เดิมก่อนเตือนใหม่
+    lastWarnings.current.clear();
+
     setAssignments((prev) => {
-      const current = prev[key] || {};
-      const nurseShifts = current[nurse] || [];
-      const has = nurseShifts.includes(shift);
-      const updatedShifts = has
-        ? nurseShifts.filter((s) => s !== shift)
-        : [...nurseShifts, shift];
-      return {
-        ...prev,
-        [key]: {
-          ...current,
-          [nurse]: updatedShifts,
-        },
-      };
+      const updated = JSON.parse(JSON.stringify(prev));
+
+      if (!updated[dateKey]) updated[dateKey] = {};
+      if (!updated[dateKey][nurseId]) updated[dateKey][nurseId] = [];
+
+      const current = updated[dateKey][nurseId];
+      const index = current.indexOf(shift);
+      if (index >= 0) {
+        current.splice(index, 1);
+      } else {
+        current.push(shift);
+      }
+
+      // ✅ เรียก validate จาก updated ทันที
+      setTimeout(() => {
+        validateSingleChange(nurseId, day, updated);
+      }, 10); // ✅ หน่วงนิดนึงเพื่อให้ UI ตอบสนองก่อน
+      // ✅ ตรวจข้ามวันด้วย: ถ้าคลิกเวรดึก → ต้องดูวันพรุ่งนี้ด้วย
+      if (shift === "night" && day < daysInMonth) {
+        setTimeout(() => {
+          validateSingleChange(nurseId, day + 1, updated);
+        }, 10); // ✅ หน่วงนิดนึงเพื่อให้ UI ตอบสนองก่อน
+      }
+      // ✅ ถ้าคลิกเวรเช้า → ต้องดูวันก่อนด้วย
+      if (shift === "morning" && day > 1) {
+        setTimeout(() => {
+          validateSingleChange(nurseId, day - 1, updated);
+        }, 10); // ✅ หน่วงนิดนึงเพื่อให้ UI ตอบสนองก่อน
+      }
+
+      return updated;
     });
+  };
+
+  const validateSingleChange = (nurseId, day, assignmentsState) => {
+    const dateKey = `${yearMonth}-${day.toString().padStart(2, "0")}`;
+    const prevDateKey =
+      day > 1 ? `${yearMonth}-${(day - 1).toString().padStart(2, "0")}` : null;
+    const nextDateKey =
+      day < daysInMonth
+        ? `${yearMonth}-${(day + 1).toString().padStart(2, "0")}`
+        : null;
+
+    const todayShifts = assignmentsState[dateKey]?.[nurseId] || [];
+    const prevShifts = prevDateKey
+      ? assignmentsState[prevDateKey]?.[nurseId] || []
+      : [];
+    const nextShifts = nextDateKey
+      ? assignmentsState[nextDateKey]?.[nurseId] || []
+      : [];
+
+    const shiftCount = { morning: 0, evening: 0, night: 0 };
+    nurseList.forEach((n) => {
+      const shifts = assignmentsState[dateKey]?.[n] || [];
+      shifts.forEach((s) => shiftCount[s]++);
+    });
+
+    // ⚠️ เตือนเวรเกิน
+    const keyOver = `over-${dateKey}`;
+    if (
+      shiftCount.morning > 4 ||
+      shiftCount.evening > 3 ||
+      shiftCount.night > 3
+    ) {
+      if (!lastWarnings.current.has(keyOver)) {
+        toast.warn(`⚠️ วันที่ ${day} มีเวรเกินที่กำหนด`);
+        lastWarnings.current.add(keyOver);
+      }
+    }
+
+    // ⛔ ห้ามดึกต่อเช้า
+    const keyNightMorning = `nm-${nurseId}-${day}`;
+    if (todayShifts.includes("night") && nextShifts.includes("morning")) {
+      if (!lastWarnings.current.has(keyNightMorning)) {
+        toast.warn(
+          `⛔ ${nurseMap[nurseId]} ห้ามเวรดึกต่อเช้า (วันที่ ${day} → ${
+            day + 1
+          })`
+        );
+        lastWarnings.current.add(keyNightMorning);
+      }
+    }
+
+    // ⛔ ห้ามบ่ายต่อดึก
+    const keyEveningNight = `en-${nurseId}-${day}`;
+    if (prevShifts.includes("evening") && todayShifts.includes("night")) {
+      if (!lastWarnings.current.has(keyEveningNight)) {
+        toast.warn(`⛔ ${nurseMap[nurseId]} ห้ามเวรบ่ายต่อดึก (วันที่ ${day})`);
+        lastWarnings.current.add(keyEveningNight);
+      }
+    }
   };
 
   const saveToSupabase = async () => {
     if (!hospitalId || !wardId) {
-      toast.error("⚠️ ไม่มี hospital_id หรือ ward_id ในบริบทผู้ใช้", { autoClose: 2000 });
+      toast.error("⚠️ ไม่มี hospital_id หรือ ward_id ในบริบทผู้ใช้");
       return;
     }
 
     try {
+      if (!shiftPlanName.trim()) {
+        toast.error("⚠️ กรุณาตั้งชื่อตารางเวรก่อนบันทึก");
+        return;
+      }
+
+      // สร้างตารางเวรใหม่
+      const { data: plan, error: planError } = await supabase
+        .from("shift_plans")
+        .insert([
+          {
+            hospital_id: hospitalId,
+            ward_id: wardId,
+            name: shiftPlanName.trim(),
+            month,
+            year,
+          },
+        ])
+        .select()
+        .single();
+
+      if (planError || !plan) {
+        toast.error("❌ สร้างตารางเวรไม่สำเร็จ");
+        return;
+      }
+
+      const newPlanId = plan.id;
+      setPlanId(newPlanId); // ใช้ในการ insert shift
+
       const rows = [];
       for (const [date, nurses] of Object.entries(assignments)) {
         for (const [nurse, shiftList] of Object.entries(nurses)) {
           for (const shift of shiftList) {
             rows.push({
+              plan_id: newPlanId,
               nurse_id: nurse,
               shift_date: date,
               shift_type: shift,
@@ -172,22 +463,16 @@ function ShiftPlanner() {
       const monthStart = `${yearMonth}-01`;
       const monthEnd = dayjs(monthStart).endOf("month").format("YYYY-MM-DD");
 
-      await supabase
-        .from("nurse_shifts")
-        .delete()
-        .eq("hospital_id", hospitalId)
-        .eq("ward_id", wardId)
-        .gte("shift_date", monthStart)
-        .lte("shift_date", monthEnd);
+      await supabase.from("nurse_shifts").delete().eq("plan_id", newPlanId);
 
       const { error } = await supabase.from("nurse_shifts").insert(rows);
       if (error) {
-        toast.error("❌ เกิดข้อผิดพลาด: " + error.message, { autoClose: 2000 });
+        toast.error("❌ เกิดข้อผิดพลาด: " + error.message);
       } else {
-        toast.success("✅ บันทึกข้อมูลสำเร็จ", { autoClose: 2000 });
+        toast.success("✅ บันทึกข้อมูลสำเร็จ");
       }
     } catch (e) {
-      toast.error("⚠️ บันทึกล้มเหลว: " + e.message, { autoClose: 2000 });
+      toast.error("⚠️ บันทึกล้มเหลว: " + e.message);
     }
   };
 
@@ -210,7 +495,7 @@ function ShiftPlanner() {
       .lte("date", prevMonthEnd);
 
     if (error || !data || data.length === 0) {
-      toast.error("⚠️ ไม่พบข้อมูลในเดือนก่อนหน้า", { autoClose: 2000 });
+      toast.error("⚠️ ไม่พบข้อมูลในเดือนก่อนหน้า");
       return;
     }
 
@@ -249,7 +534,7 @@ function ShiftPlanner() {
       output += "\n";
     }
 
-    toast.info(output, { autoClose: 2000 });
+    toast.info(output);
   };
 
   const exportToExcel = async () => {
@@ -272,15 +557,198 @@ function ShiftPlanner() {
     XLSX.utils.book_append_sheet(workbook, worksheet, "เวรพยาบาล");
     XLSX.writeFile(workbook, `nurse-shifts-${yearMonth}.xlsx`);
   };
+  const [showPlanDialog, setShowPlanDialog] = useState(false);
+  const [availablePlans, setAvailablePlans] = useState([]);
+
+  const openCopyPlanDialog = async () => {
+    if (!hospitalId || !wardId) return;
+    const { data, error } = await supabase
+      .from("shift_plans")
+      .select("*")
+      .eq("hospital_id", hospitalId)
+      .eq("ward_id", wardId)
+      .order("created_at", { ascending: false });
+
+    if (error || !data) {
+      toast.error("⚠️ โหลดตารางเวรไม่สำเร็จ");
+      return;
+    }
+
+    setAvailablePlans(data);
+    setShowPlanDialog(true);
+  };
+
+  const copyFromPlanId = async (copyPlanId) => {
+    const { data, error } = await supabase
+      .from("nurse_shifts")
+      .select("*")
+      .eq("plan_id", copyPlanId);
+
+    if (error || !data || data.length === 0) {
+      toast.error("⚠️ ไม่พบข้อมูลในตารางเวรนี้");
+      return;
+    }
+
+    const copied = {};
+    data.forEach((row) => {
+      const day = dayjs(row.shift_date).date();
+      const newDate = `${yearMonth}-${day.toString().padStart(2, "0")}`;
+      if (!copied[newDate]) copied[newDate] = {};
+      if (!copied[newDate][row.nurse_id]) copied[newDate][row.nurse_id] = [];
+      copied[newDate][row.nurse_id].push(row.shift_type);
+    });
+
+    setAssignments(copied);
+    setStatusMessage("🔁 คัดลอกจากตารางเวรสำเร็จ (ยังไม่บันทึก)");
+    setShowPlanDialog(false);
+  };
 
   return (
     <div className="overflow-auto p-4">
+      {showPlanDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="bg-white p-4 rounded max-h-[80vh] overflow-y-auto w-full max-w-md">
+            <h2 className="text-lg font-bold mb-2 text-black">
+              รายการตารางเวรเก่า
+            </h2>
+            {availablePlans.map((p) => (
+              <div
+                key={p.id}
+                className="flex justify-between items-center py-2 border-b gap-2"
+              >
+                <div className="flex-1 text-black">
+                  🗓 {p.name} ({p.month}/{p.year})
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => copyFromPlanId(p.id)}
+                    className="bg-blue-600 text-white px-2 py-1 rounded text-sm"
+                  >
+                    ✅ คัดลอก
+                  </button>
+                  <button
+                    onClick={() => loadPlanForEdit(p.id, p.name)}
+                    className="bg-teal-600 text-white px-2 py-1 rounded text-sm"
+                  >
+                    🛠 แก้เวร
+                  </button>
+                  <button
+                    onClick={() => editPlanName(p.id, p.name)}
+                    className="bg-orange-500 text-white px-2 py-1 rounded text-sm"
+                  >
+                    ✏️ แก้ชื่อ
+                  </button>
+                  <button
+                    onClick={() => viewPlanDetails(p.id, p.name)}
+                    className="bg-gray-700 text-white px-2 py-1 rounded text-sm"
+                  >
+                    👁 ดู
+                  </button>
+                  <button
+                    onClick={() => deletePlan(p.id)}
+                    className="bg-red-600 text-white px-2 py-1 rounded text-sm"
+                  >
+                    🗑 ลบ
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <button
+              onClick={() => setShowPlanDialog(false)}
+              className="mt-4 bg-gray-500 text-white px-3 py-2 rounded"
+            >
+              ❌ ยกเลิก
+            </button>
+          </div>
+        </div>
+      )}
+      {viewingPlan && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="bg-white p-4 rounded max-h-[80vh] overflow-y-auto w-full max-w-4xl">
+            <h2 className="text-lg font-bold mb-4 text-center text-black">
+              👁 ตารางเวร: {viewingPlan.name}
+            </h2>
+            <table className="table-auto border-collapse text-sm mx-auto mb-4">
+              <thead>
+                <tr>
+                  <th className="border px-2 py-1 bg-gray-200 text-black sticky left-0 z-10">
+                    👩‍⚕️ พยาบาล
+                  </th>
+                  {Array.from({ length: 31 }, (_, i) => (
+                    <th
+                      key={i + 1}
+                      className="border px-2 py-1 bg-gray-100 text-black"
+                    >
+                      {i + 1}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {nurseList.map((nurse, rowIndex) => (
+                  <tr key={rowIndex}>
+                    <td className="border px-2 py-1 sticky left-0 bg-white text-black z-10">
+                      {nurseMap[nurse] || nurse}
+                    </td>
+                    {Array.from({ length: 31 }, (_, dayIndex) => {
+                      const day = dayIndex + 1;
+                      const dateKey = `${year}-${month
+                        .toString()
+                        .padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
+                      const assigned =
+                        viewingAssignments[dateKey]?.[nurse] || [];
+                      return (
+                        <td
+                          key={dayIndex}
+                          className="border px-1 py-1 text-center bg-white"
+                        >
+                          {assigned.map((s) => (
+                            <div
+                              key={s}
+                              className={`text-xs rounded px-1 mb-0.5 text-black ${
+                                s === "morning"
+                                  ? "bg-blue-300"
+                                  : s === "evening"
+                                  ? "bg-orange-300"
+                                  : "bg-purple-300"
+                              }`}
+                            >
+                              {shiftLabels[s]}
+                            </div>
+                          ))}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="text-center">
+              <button
+                onClick={() => setViewingPlan(null)}
+                className="bg-gray-500 text-white px-4 py-2 rounded"
+              >
+                ❌ ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* หัวเรื่อง + ปุ่มลิงก์ admin */}
       <div className="flex flex-wrap items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">
-          📅 แผนผังจัดเวรพยาบาล (
+          📅 ตารางจัดเวรพยาบาล (
           {dayjs(`${year}-${month}-01`).format("MMMM YYYY")})
+          {shiftPlanName && (
+            <>
+              {" "}
+              - <span className="text-blue-300">{shiftPlanName}</span>
+            </>
+          )}
         </h1>
+
         {hospitalId && wardId && (
           <div className="text-sm text-gray-600">
             🏥 โรงพยาบาล:{" "}
@@ -339,7 +807,7 @@ function ShiftPlanner() {
           {/* <button
             onClick={() => {
               localStorage.removeItem("user_context");
-              toast.error("⚠️ ล้างการตั้งค่าเรียบร้อยแล้ว กำลังโหลดใหม่...", { autoClose: 2000 });
+              toast.error("⚠️ ล้างการตั้งค่าเรียบร้อยแล้ว กำลังโหลดใหม่...");
               window.location.reload();
             }}
             className="px-3 py-2 bg-red-500 text-white rounded"
@@ -380,18 +848,48 @@ function ShiftPlanner() {
           ))}
         </select>
 
-        <button
-          onClick={saveToSupabase}
-          className="px-4 py-2 bg-green-600 text-white rounded"
-        >
-          💾 บันทึกตารางเวร
-        </button>
+        <input
+          type="text"
+          placeholder="ตั้งชื่อตารางเวร เช่น เวรกลางคืนเดือนนี้"
+          value={shiftPlanName}
+          onChange={(e) => setShiftPlanName(e.target.value)}
+          className="border px-2 py-1 rounded"
+          style={{ minWidth: "200px" }}
+        />
+
+        {editingPlan ? (
+          <>
+            <button
+              onClick={saveToExistingPlan}
+              className="px-4 py-2 bg-green-700 text-white rounded"
+            >
+              💾 บันทึกทับตารางเวรเดิม
+            </button>
+            <button
+              onClick={() => {
+                setPlanId(null);
+                setEditingPlan(false);
+                toast.info("🆕 กำลังบันทึกเป็นตารางเวรใหม่");
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded"
+            >
+              📄 บันทึกเป็นตารางเวรใหม่
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={saveToSupabase}
+            className="px-4 py-2 bg-green-600 text-white rounded"
+          >
+            💾 บันทึกตารางเวร
+          </button>
+        )}
 
         <button
-          onClick={copyFromPreviousMonth}
+          onClick={openCopyPlanDialog}
           className="px-4 py-2 bg-yellow-400 text-black rounded"
         >
-          🔁 คัดลอกจากเดือนก่อน
+          🧾 ดูตารางเวรเก่า
         </button>
 
         <button

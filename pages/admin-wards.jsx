@@ -22,7 +22,7 @@ export default function AdminWards() {
       .from("hospitals")
       .select("id, name")
       .order("name");
-    if (error) toast.error("โหลดรายชื่อโรงพยาบาลล้มเหลว", { autoClose: 2000 });
+    if (error) toast.error("โหลดรายชื่อโรงพยาบาลล้มเหลว");
     else setHospitals(data);
   };
 
@@ -31,22 +31,22 @@ export default function AdminWards() {
       .from("wards")
       .select("id, name, hospital_id, hospitals(name)")
       .order("name");
-    if (error) toast.error("โหลดวอร์ดล้มเหลว", { autoClose: 2000 });
+    if (error) toast.error("โหลดวอร์ดล้มเหลว");
     else setWards(data);
   };
 
   const addWard = async () => {
     if (!newWardName.trim() || !selectedHospitalId) {
-      toast.warn("กรุณากรอกชื่อวอร์ดและเลือกโรงพยาบาล", { autoClose: 2000 });
+      toast.warn("กรุณากรอกชื่อวอร์ดและเลือกโรงพยาบาล");
       return;
     }
     const { error } = await supabase.from("wards").insert({
       name: newWardName,
       hospital_id: selectedHospitalId,
     });
-    if (error) toast.error("เพิ่มวอร์ดไม่สำเร็จ", { autoClose: 2000 });
+    if (error) toast.error("เพิ่มวอร์ดไม่สำเร็จ");
     else {
-      toast.success("เพิ่มวอร์ดแล้ว", { autoClose: 2000 });
+      toast.success("เพิ่มวอร์ดแล้ว");
       setNewWardName("");
       setSelectedHospitalId("");
       fetchWards();
@@ -58,9 +58,9 @@ export default function AdminWards() {
       .from("wards")
       .update({ name: editingName, hospital_id: editingHospitalId })
       .eq("id", id);
-    if (error) toast.error("บันทึกไม่สำเร็จ", { autoClose: 2000 });
+    if (error) toast.error("บันทึกไม่สำเร็จ");
     else {
-      toast.success("บันทึกสำเร็จ", { autoClose: 2000 });
+      toast.success("บันทึกสำเร็จ");
       setEditingId(null);
       fetchWards();
     }
@@ -69,9 +69,9 @@ export default function AdminWards() {
   const deleteWard = async (id) => {
     if (!confirm("ยืนยันลบวอร์ดนี้?")) return;
     const { error } = await supabase.from("wards").delete().eq("id", id);
-    if (error) toast.error("ลบไม่สำเร็จ", { autoClose: 2000 });
+    if (error) toast.error("ลบไม่สำเร็จ");
     else {
-      toast.success("ลบแล้ว", { autoClose: 2000 });
+      toast.success("ลบแล้ว");
       fetchWards();
     }
   };

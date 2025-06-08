@@ -19,32 +19,32 @@ export default function AdminHospitalsPage() {
       .select("*")
       .order("name");
 
-    if (error) toast.error("เกิดข้อผิดพลาดในการโหลด", { autoClose: 2000 });
+    if (error) toast.error("เกิดข้อผิดพลาดในการโหลด");
     else setHospitals(data);
   }
 
   async function addHospital() {
-    if (!newName.trim()) return toast.warn("กรุณากรอกชื่อโรงพยาบาล", { autoClose: 2000 });
+    if (!newName.trim()) return toast.warn("กรุณากรอกชื่อโรงพยาบาล");
     const { error } = await supabase
       .from("hospitals")
       .insert({ name: newName });
-    if (error) toast.error("เพิ่มไม่สำเร็จ", { autoClose: 2000 });
+    if (error) toast.error("เพิ่มไม่สำเร็จ");
     else {
-      toast.success("เพิ่มโรงพยาบาลแล้ว", { autoClose: 2000 });
+      toast.success("เพิ่มโรงพยาบาลแล้ว");
       setNewName("");
       fetchHospitals();
     }
   }
 
   async function updateHospital(id, name) {
-    if (!name.trim()) return toast.warn("ชื่อห้ามว่าง", { autoClose: 2000 });
+    if (!name.trim()) return toast.warn("ชื่อห้ามว่าง");
     const { error } = await supabase
       .from("hospitals")
       .update({ name })
       .eq("id", id);
     if (error) toast.error("บันทึกไม่สำเร็จ");
     else {
-      toast.success("บันทึกสำเร็จ", { autoClose: 2000 });
+      toast.success("บันทึกสำเร็จ");
       setEditingId(null);
       setEditingName("");
       fetchHospitals();
@@ -54,9 +54,9 @@ export default function AdminHospitalsPage() {
   async function deleteHospital(id) {
     if (!confirm("ลบโรงพยาบาลนี้หรือไม่?")) return;
     const { error } = await supabase.from("hospitals").delete().eq("id", id);
-    if (error) toast.error("ลบไม่สำเร็จ", { autoClose: 2000 });
+    if (error) toast.error("ลบไม่สำเร็จ");
     else {
-      toast.success("ลบแล้ว", { autoClose: 2000 });
+      toast.success("ลบแล้ว");
       fetchHospitals();
     }
   }
