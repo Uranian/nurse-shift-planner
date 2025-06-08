@@ -20,14 +20,16 @@ export default function SystemSettingsPage() {
     if (stored) {
       const user = JSON.parse(stored);
       setCurrentUser(user);
-      setSelectedHospital(user.hospital_id);
-      setSelectedWard(user.ward_id);
+      if (user.role !== "admin") {
+        setSelectedHospital(user.hospital_id);
+        setSelectedWard(user.ward_id);
+      }
     }
     const shiftPlanner = localStorage.getItem("shift_planner_context");
     if (shiftPlanner) {
       const context = JSON.parse(shiftPlanner);
-      setSelectedHospital(context.hospital_id); // ถ้าจะให้เลือก รพ. ตาม context
-      setSelectedWard(context.ward_id); // ✅ เซตค่าเริ่มต้นของวอร์ดจาก shift_planner_context
+      setSelectedHospital(context.hospital_id);
+      setSelectedWard(context.ward_id);
     }
   }, []);
 
@@ -35,10 +37,10 @@ export default function SystemSettingsPage() {
     const fetchHospitals = async () => {
       if (!currentUser) return;
 
-      const query = supabase.from("hospitals").select("id, name").order("name");
+      let query = supabase.from("hospitals").select("id, name").order("name");
 
       if (currentUser.role !== "admin") {
-        query.eq("id", currentUser.hospital_id);
+        query = query.eq("id", currentUser.hospital_id);
       }
 
       const { data, error } = await query;
@@ -74,7 +76,7 @@ export default function SystemSettingsPage() {
     fetchWards();
   }, [selectedHospital, currentUser]);
 
-  const saveSettings = () => {
+  const saveSettings = async () => {
     if (!selectedHospital || !selectedWard) {
       toast.info("กรุณาเลือกโรงพยาบาลและวอร์ดก่อนบันทึก");
       return;
@@ -93,8 +95,21 @@ export default function SystemSettingsPage() {
       })
     );
 
-    toast.success("✅ บันทึกการตั้งค่าระบบเรียบร้อยแล้ว");
-    router.push("/shift-planner");
+    // 👇 อัปเดตค่า shift_default_ward_id และ name ในตาราง hospitals
+    const { error } = await supabase
+      .from("hospitals")
+      .update({
+        shift_default_ward_id: selectedWard,
+        shift_default_ward_name: ward?.name || "",
+      })
+      .eq("id", selectedHospital);
+
+    if (error) {
+      toast.error("❌ บันทึกค่า default ward ไม่สำเร็จ: " + error.message);
+    } else {
+      toast.success("✅ บันทึกการตั้งค่าระบบเรียบร้อยแล้ว");
+      router.push("/shift-planner");
+    }
   };
 
   return (

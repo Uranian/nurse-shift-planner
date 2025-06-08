@@ -214,40 +214,39 @@ function ShiftPlanner() {
 
   // 🌐 โหลด context จาก localStorage
   useEffect(() => {
-    const raw = localStorage.getItem("shift_planner_context");
-    try {
-      const prefs = raw ? JSON.parse(raw) : null;
-      console.log("📦 shift_planner_context:", prefs);
-      if (prefs) {
-        console.log("🏥 hospitalId =", prefs.hospital_id);
-        console.log("🏥 hospital_name =", prefs.hospital_name);
-      }
-      const hospital_id = prefs?.hospital_id || DEFAULT_HOSPITAL_ID;
-      const ward_id = prefs?.ward_id || DEFAULT_WARD_ID;
-      const hospital_name = prefs?.hospital_name || DEFAULT_HOSPITAL_NAME;
-      const ward_name = prefs?.ward_name || DEFAULT_WARD_NAME;
+    const loadContext = async () => {
+      const raw = localStorage.getItem("shift_planner_context");
+      let prefs = raw ? JSON.parse(raw) : null;
 
-      setHospitalId(hospital_id);
-      setWardId(ward_id);
-      setHospitalName(hospital_name);
-      setWardName(ward_name);
-
-      // เซฟกลับด้วย ถ้ายังไม่มีใน localStorage
       if (!prefs) {
-        const defaultContext = {
-          hospital_id,
-          ward_id,
-          hospital_name,
-          ward_name,
-        };
-        localStorage.setItem(
-          "shift_planner_context",
-          JSON.stringify(defaultContext)
-        );
+        // ถ้ายังไม่มีใน localStorage → โหลดจาก hospitals
+        const hospitalRes = await supabase
+          .from("hospitals")
+          .select("id, name, shift_default_ward_id, shift_default_ward_name")
+          .eq("id", DEFAULT_HOSPITAL_ID) // หรือ hospitalId จาก login
+          .single();
+
+        const h = hospitalRes.data;
+        if (h) {
+          prefs = {
+            hospital_id: h.id,
+            ward_id: h.shift_default_ward_id || DEFAULT_WARD_ID,
+            hospital_name: h.name,
+            ward_name: h.shift_default_ward_name || DEFAULT_WARD_NAME,
+          };
+          localStorage.setItem("shift_planner_context", JSON.stringify(prefs));
+        }
       }
-    } catch (e) {
-      console.error("⚠️ อ่าน shift_planner_context ไม่ได้:", e);
-    }
+
+      if (prefs) {
+        setHospitalId(prefs.hospital_id);
+        setWardId(prefs.ward_id);
+        setHospitalName(prefs.hospital_name);
+        setWardName(prefs.ward_name);
+      }
+    };
+
+    loadContext();
   }, []);
 
   useEffect(() => {
@@ -853,11 +852,32 @@ function ShiftPlanner() {
           ) : (
             <button
               onClick={() => {
+                // ลบข้อมูลผู้ใช้
                 localStorage.removeItem("logged_in_user");
-                setCurrentUser(null); // ลบสถานะผู้ใช้ใน state
-                setHospitalId(DEFAULT_HOSPITAL_ID); // กลับไปใช้โรงพยาบาลตัวอย่าง
+
+                // เซต context กลับเป็นค่าตั้งต้น
+                const defaultContext = {
+                  hospital_id: DEFAULT_HOSPITAL_ID,
+                  ward_id: DEFAULT_WARD_ID,
+                  hospital_name: DEFAULT_HOSPITAL_NAME,
+                  ward_name: DEFAULT_WARD_NAME,
+                };
+                localStorage.setItem(
+                  "shift_planner_context",
+                  JSON.stringify(defaultContext)
+                );
+
+                // ลบ state ปัจจุบัน
+                setCurrentUser(null);
+                setHospitalId(DEFAULT_HOSPITAL_ID);
                 setWardId(DEFAULT_WARD_ID);
-                // router.push("/login"); // ย้อนกลับไปหน้าล็อกอิน
+                setHospitalName(DEFAULT_HOSPITAL_NAME);
+                setWardName(DEFAULT_WARD_NAME);
+
+                toast.success("👋 ออกจากระบบเรียบร้อย");
+
+                // window.location.href = "/login"; // ย้อนกลับไปหน้าล็อกอิน
+                window.location.href = "/shift-planner"; // ไปหน้า shift-planner ทันที
               }}
               className="bg-red-500 text-white px-4 py-2 rounded"
             >

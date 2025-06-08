@@ -39,47 +39,52 @@ export default function AdminDashboard() {
             💆‍♀️ จัดคิวนวดแผนไทย
           </button>
         </Link>
-        {isAdmin && (
-          <Link href="/admin-hospitals">
-            <button className="w-full px-4 py-3 rounded shadow bg-gray-700 text-white">
-              🏥 โรงพยาบาล
+
+        {currentUser && (
+          <>
+            {isAdmin && (
+              <Link href="/admin-hospitals">
+                <button className="w-full px-4 py-3 rounded shadow bg-gray-700 text-white">
+                  🏥 โรงพยาบาล
+                </button>
+              </Link>
+            )}
+            {isAdmin && (
+              <Link href="/admin-wards">
+                <button className="w-full px-4 py-3 rounded shadow bg-gray-700 text-white">
+                  🏬 วอร์ด
+                </button>
+              </Link>
+            )}
+            {/* ปุ่มพยาบาล */}
+            <button
+              className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow"
+              onClick={() => {
+                if (isHeadNurse || currentUser?.role === "admin") {
+                  router.push("/nurse-manager");
+                } else {
+                  toast.warn(
+                    "❌ คุณไม่มีสิทธิ์ใช้งานหน้านี้ เพราะคุณไม่ใช่หัวหน้าวอร์ด/หัวหน้าพยาบาล"
+                  );
+                }
+              }}
+            >
+              🧑‍⚕️ พยาบาล
             </button>
-          </Link>
+            {/* ปุ่มผู้ใช้ */}
+            <Link href="/admin-users">
+              <button className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow">
+                👤 ผู้ใช้
+              </button>
+            </Link>
+            {/* ปุ่มตั้งค่าระบบ */}
+            <Link href="/system-settings">
+              <button className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow">
+                ⚙️ ตั้งค่าระบบ
+              </button>
+            </Link>
+          </>
         )}
-
-        {isAdmin && (
-          <Link href="/admin-wards">
-            <button className="w-full px-4 py-3 rounded shadow bg-gray-700 text-white">
-              🏬 วอร์ด
-            </button>
-          </Link>
-        )}
-        <button
-          className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow"
-          onClick={() => {
-            if (isHeadNurse || currentUser?.role === "admin") {
-              router.push("/nurse-manager");
-            } else {
-              toast.warn(
-                "❌ คุณไม่มีสิทธิ์ใช้งานหน้านี้ เพราะคุณไม่ใช่หัวหน้าวอร์ด/หัวหน้าพยาบาล"
-              );
-            }
-          }}
-        >
-          🧑‍⚕️ พยาบาล
-        </button>
-
-        <Link href="/admin-users">
-          <button className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow">
-            👤 ผู้ใช้
-          </button>
-        </Link>
-
-        <Link href="/system-settings">
-          <button className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow">
-            ⚙️ ตั้งค่าระบบ
-          </button>
-        </Link>
       </div>
     </div>
   );
