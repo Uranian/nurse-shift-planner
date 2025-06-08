@@ -23,7 +23,14 @@ export default function Login() {
     }
 
     localStorage.setItem("logged_in_user", JSON.stringify(data));
-    router.push("/shift-planner"); // ✅ ไปหน้าจัดเวรหลังล็อกอิน
+
+    // → เช็กว่า shift_planner_context มีค่าหรือไม่
+    const finalContext = localStorage.getItem("shift_planner_context");
+    if (!finalContext) {
+      router.push("/system-settings");
+    } else {
+      router.push("/shift-planner");
+    }
   };
 
   return (

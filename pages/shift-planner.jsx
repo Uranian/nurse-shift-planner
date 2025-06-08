@@ -855,29 +855,12 @@ function ShiftPlanner() {
                 // ลบข้อมูลผู้ใช้
                 localStorage.removeItem("logged_in_user");
 
-                // เซต context กลับเป็นค่าตั้งต้น
-                const defaultContext = {
-                  hospital_id: DEFAULT_HOSPITAL_ID,
-                  ward_id: DEFAULT_WARD_ID,
-                  hospital_name: DEFAULT_HOSPITAL_NAME,
-                  ward_name: DEFAULT_WARD_NAME,
-                };
-                localStorage.setItem(
-                  "shift_planner_context",
-                  JSON.stringify(defaultContext)
-                );
-
                 // ลบ state ปัจจุบัน
                 setCurrentUser(null);
-                setHospitalId(DEFAULT_HOSPITAL_ID);
-                setWardId(DEFAULT_WARD_ID);
-                setHospitalName(DEFAULT_HOSPITAL_NAME);
-                setWardName(DEFAULT_WARD_NAME);
-
                 toast.success("👋 ออกจากระบบเรียบร้อย");
 
-                // window.location.href = "/login"; // ย้อนกลับไปหน้าล็อกอิน
-                window.location.href = "/shift-planner"; // ไปหน้า shift-planner ทันที
+                window.location.href = "/login"; // ย้อนกลับไปหน้าล็อกอิน
+                // window.location.href = "/shift-planner"; // ไปหน้า shift-planner ทันที
               }}
               className="bg-red-500 text-white px-4 py-2 rounded"
             >
