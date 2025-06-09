@@ -17,6 +17,7 @@ export default function AdminUsers() {
     phone: "",
     hospital_id: "",
     ward_id: "",
+    shift_ward_id: "", // ✅ เพิ่ม
     role: "customer",
     user_type: "พยาบาล", // ✅ เพิ่ม
   });
@@ -27,6 +28,8 @@ export default function AdminUsers() {
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingUserId, setDeletingUserId] = useState(null);
+
+  const [showAddUserForm, setShowAddUserForm] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("logged_in_user");
@@ -42,34 +45,39 @@ export default function AdminUsers() {
   const fetchData = async (user) => {
     let query = supabase
       .from("profiles")
-      .select("*, hospitals(name), wards(name)")
+      .select(
+        `
+    id, username, email, phone, hospital_id, ward_id, shift_ward_id, role, user_type,
+    hospitals(name),
+    wards!profiles_ward_id_fkey(name),
+    shift_wards:wards!profiles_shift_ward_id_fkey(name)
+  `
+      )
       .order("email", { ascending: true });
 
     if (user?.role === "admin") {
-      // แอดมินดูได้ทุกคน
-      // ไม่ต้องกรองอะไรเพิ่ม
+      // admin เห็นทั้งหมด
     } else if (user.user_type === "หัวหน้าพยาบาล") {
-      query = query.eq("hospital_id", user.hospital_id).neq("role", "admin"); // ดูทั้งโรงพยาบาล
+      query = query.eq("hospital_id", user.hospital_id).neq("role", "admin");
     } else if (user.user_type === "หัวหน้าวอร์ด") {
-      query = query
-        .eq("hospital_id", user.hospital_id)
-        .eq("ward_id", user.ward_id)
-        .neq("role", "admin"); // ดูเฉพาะในวอร์ด
+      query = query.eq("hospital_id", user.hospital_id).neq("role", "admin");
+      if (user.ward_id) {
+        query = query.eq("ward_id", user.ward_id);
+      } else {
+        query = query.is("ward_id", null);
+      }
     } else {
-      // พยาบาล/คนงาน → ดูได้เฉพาะตัวเอง
       query = query.eq("id", user.id);
     }
 
-    console.log(
-      "กำลังโหลดผู้ใช้สำหรับ",
-      user.user_type,
-      "ใน",
-      user.hospital_id,
-      "/",
-      user.ward_id
-    );
+    const { data: usersData, error } = await query;
 
-    const { data: usersData } = await query;
+    if (error) {
+      console.error("❌ โหลดผู้ใช้ล้มเหลว", error.message, error.details);
+    } else {
+      console.log("✅ โหลดผู้ใช้สำเร็จ", usersData.length, "คน");
+    }
+
     setUsers(usersData || []);
 
     // โหลดโรงพยาบาลทั้งหมด (admin ดูได้หมด, customer ดูเฉพาะที่ตัวเอง)
@@ -94,7 +102,7 @@ export default function AdminUsers() {
 
   const handleAdd = async () => {
     if (!/^[0-9]{8}$/.test(newUser.password)) {
-      toast.error("รหัสผ่านต้องเป็นตัวเลข 8 หลัก");
+      toast.error("รหัสผ่าน (ต้องเป็นตัวเลข 8 หลัก)");
       return;
     }
 
@@ -107,7 +115,7 @@ export default function AdminUsers() {
       (currentUser?.role !== "admin" && !newUser.role)
     ) {
       toast.error(
-        "กรุณากรอก Username, รหัสผ่าน 8 หลัก, โรงพยาบาล, วอร์ด และประเภทผู้ใช้"
+        "กรุณากรอก Username, รหัสผ่าน (เลข 8 หลัก), โรงพยาบาล, วอร์ด และประเภทผู้ใช้"
       );
       return;
     }
@@ -125,6 +133,7 @@ export default function AdminUsers() {
       phone: "",
       hospital_id: "",
       ward_id: "",
+      shift_ward_id: "", // ✅ เพิ่มตรงนี้
       role: "customer",
       user_type: "พยาบาล",
     });
@@ -132,7 +141,13 @@ export default function AdminUsers() {
   };
 
   const handleUpdate = async () => {
-    if (!editUser.email || !editUser.hospital_id || !editUser.ward_id) return;
+    if (
+      !editUser.username ||
+      !editUser.hospital_id ||
+      !editUser.ward_id ||
+      !editUser.shift_ward_id
+    )
+      return;
 
     const updatedFields = {
       email: editUser.email,
@@ -140,6 +155,7 @@ export default function AdminUsers() {
       phone: editUser.phone,
       hospital_id: editUser.hospital_id,
       ward_id: editUser.ward_id,
+      shift_ward_id: editUser.shift_ward_id, // ✅ เพิ่มตรงนี้
       user_type: editUser.user_type,
       updated_at: new Date().toISOString(),
     };
@@ -190,7 +206,15 @@ export default function AdminUsers() {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">👥 จัดการผู้ใช้</h1>
+      <h1 className="text-2xl font-bold mb-2">👥 จัดการผู้ใช้</h1>
+
+      {currentUser && (
+        <p className="text-sm text-white mb-4">
+          ผู้ใช้: <span className="font-semibold">{currentUser.username}</span>{" "}
+          (<span className="italic">{currentUser.role}</span>
+          {currentUser.user_type ? ` / ${currentUser.user_type}` : ""})
+        </p>
+      )}
 
       <input
         value={search}
@@ -199,191 +223,356 @@ export default function AdminUsers() {
         className="border px-2 py-1 mb-2 w-full"
       />
 
-      <div className="mb-4 flex gap-2 flex-wrap items-center bg-white text-black p-4 rounded">
-        <input
-          value={newUser.username}
-          onChange={(e) => handleChange("username", e.target.value)}
-          placeholder="username"
-          className="border px-2 py-1"
-        />
+      {showAddUserForm && (
+        <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4 bg-white text-black p-4 rounded">
+          {/* Username */}
+          <div>
+            <label className="block font-semibold mb-1">👤 Username</label>
+            <input
+              value={newUser.username}
+              onChange={(e) => handleChange("username", e.target.value)}
+              className="border px-2 py-1 w-full"
+            />
+          </div>
 
-        <input
-          value={newUser.password}
-          onChange={(e) => handleChange("password", e.target.value)}
-          placeholder="รหัสผ่าน 8 หลัก"
-          className="border px-2 py-1"
-          type="password"
-        />
-        <input
-          value={newUser.email}
-          onChange={(e) => handleChange("email", e.target.value)}
-          placeholder="email"
-          className="border px-2 py-1"
-        />
-        <input
-          value={newUser.phone}
-          onChange={(e) => handleChange("phone", e.target.value)}
-          placeholder="เบอร์โทร"
-          className="border px-2 py-1"
-        />
-        <select
-          value={newUser.hospital_id}
-          onChange={(e) => handleChange("hospital_id", e.target.value)}
-          className="border px-2 py-1"
-          disabled={currentUser?.role !== "admin"} // ✅
-        >
-          <option value="">เลือกโรงพยาบาล</option>
-          {hospitals.map((h) => (
-            <option key={h.id} value={h.id}>
-              {h.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={newUser.ward_id}
-          onChange={(e) => handleChange("ward_id", e.target.value)}
-          className="border px-2 py-1"
-          disabled={currentUser?.role !== "admin"} // ✅
-        >
-          {newUser.hospital_id ? (
-            filteredWardsForNewUser.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))
-          ) : (
-            <option value="">กรุณาเลือกโรงพยาบาลก่อน</option>
+          {/* Password */}
+          <div>
+            <label className="block font-semibold mb-1">
+              🔒 รหัสผ่าน (ต้องเป็นตัวเลข 8 หลัก)
+            </label>
+            <input
+              type="password"
+              value={newUser.password}
+              onChange={(e) => handleChange("password", e.target.value)}
+              className="border px-2 py-1 w-full"
+            />
+          </div>
+
+          {/* Email */}
+          <div>
+            <label className="block font-semibold mb-1">📧 Email</label>
+            <input
+              value={newUser.email}
+              onChange={(e) => handleChange("email", e.target.value)}
+              className="border px-2 py-1 w-full"
+            />
+          </div>
+
+          {/* Phone */}
+          <div>
+            <label className="block font-semibold mb-1">📱 เบอร์โทร</label>
+            <input
+              value={newUser.phone}
+              onChange={(e) => handleChange("phone", e.target.value)}
+              className="border px-2 py-1 w-full"
+            />
+          </div>
+
+          {/* Hospital */}
+          <div>
+            <label className="block font-semibold mb-1">🏥 โรงพยาบาล</label>
+            <select
+              value={newUser.hospital_id}
+              onChange={(e) => handleChange("hospital_id", e.target.value)}
+              className="border px-2 py-1 w-full"
+              disabled={currentUser?.role !== "admin"}
+            >
+              <option value="">เลือกโรงพยาบาล</option>
+              {hospitals.map((h) => (
+                <option key={h.id} value={h.id}>
+                  {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Ward */}
+          <div>
+            <label className="block font-semibold mb-1">
+              🏨 วอร์ดที่สังกัด
+            </label>
+            <select
+              value={newUser.ward_id}
+              onChange={(e) => handleChange("ward_id", e.target.value)}
+              className="border px-2 py-1 w-full"
+            >
+              <option value="">เลือกวอร์ด</option>
+              {filteredWardsForNewUser.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Shift Ward */}
+          <div>
+            <label className="block font-semibold mb-1">
+              📋 วอร์ดที่จัดเวร
+            </label>
+            <select
+              value={newUser.shift_ward_id}
+              onChange={(e) => handleChange("shift_ward_id", e.target.value)}
+              className="border px-2 py-1 w-full"
+            >
+              <option value="">เลือกวอร์ด</option>
+              {filteredWardsForNewUser.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* User Type */}
+          <div>
+            <label className="block font-semibold mb-1">👩‍⚕️ ประเภทผู้ใช้</label>
+            <select
+              value={newUser.user_type}
+              onChange={(e) => handleChange("user_type", e.target.value)}
+              className="border px-2 py-1 w-full"
+            >
+              <option value="หัวหน้าพยาบาล">หัวหน้าพยาบาล</option>
+              <option value="หัวหน้าวอร์ด">หัวหน้าวอร์ด</option>
+              <option value="พยาบาล">พยาบาล</option>
+              <option value="ผู้ช่วยเหลือคนไข้">ผู้ช่วยเหลือคนไข้</option>
+              <option value="คนงาน">คนงาน</option>
+            </select>
+          </div>
+
+          {/* Role (admin only) */}
+          {currentUser?.role === "admin" && (
+            <div>
+              <label className="block font-semibold mb-1">🛠️ สิทธิ์ระบบ</label>
+              <select
+                value={newUser.role}
+                onChange={(e) => handleChange("role", e.target.value)}
+                className="border px-2 py-1 w-full"
+              >
+                <option value="customer">customer</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
           )}
-        </select>
-        <select
-          value={newUser.user_type}
-          onChange={(e) => handleChange("user_type", e.target.value)}
-          className="border px-2 py-1"
-        >
-          <option value="หัวหน้าพยาบาล">หัวหน้าพยาบาล</option>
-          <option value="หัวหน้าวอร์ด">หัวหน้าวอร์ด</option>
-          <option value="พยาบาล">พยาบาล</option>
-          <option value="ผู้ช่วยเหลือคนไข้">ผู้ช่วยเหลือคนไข้</option>
-          <option value="คนงาน">คนงาน</option>
-        </select>
+        </div>
+      )}
 
-        {currentUser?.role === "admin" && (
-          <select
-            value={newUser.role}
-            onChange={(e) => handleChange("role", e.target.value)}
-            className="border px-2 py-1"
-          >
-            <option value="customer">customer</option>
-            <option value="admin">admin</option>
-          </select>
-        )}
-
+      {/* ปุ่มเพิ่ม/บันทึก/ยกเลิก */}
+      <div className="flex gap-2 mb-4">
         <button
-          onClick={handleAdd}
+          onClick={() => {
+            if (showAddUserForm) {
+              handleAdd();
+              setShowAddUserForm(false);
+            } else {
+              setNewUser((prev) => ({
+                ...prev,
+                hospital_id: currentUser?.hospital_id || "", // ✅ ล็อกโรงพยาบาล
+              }));
+              setShowAddUserForm(true);
+            }
+          }}
           className="bg-green-600 text-white px-3 py-1 rounded"
         >
-          ➕ เพิ่มผู้ใช้
+          {showAddUserForm ? "💾 บันทึกผู้ใช้ใหม่" : "➕ เพิ่มผู้ใช้"}
         </button>
+
+        {showAddUserForm && (
+          <button
+            onClick={() => {
+              // ยกเลิกและเคลียร์ข้อมูล
+              setShowAddUserForm(false);
+              setNewUser({
+                username: "",
+                email: "",
+                password: "",
+                phone: "",
+                hospital_id: "",
+                ward_id: "",
+                shift_ward_id: "",
+                role: "customer",
+                user_type: "พยาบาล",
+              });
+            }}
+            className="bg-gray-400 text-black px-4 py-2 rounded"
+          >
+            ❌ ยกเลิก
+          </button>
+        )}
       </div>
 
       {editUser && (
         <div className="mb-4 border p-4 bg-gray-200 rounded text-black">
-          <h2 className="text-lg font-semibold mb-2 text-black">
+          <h2 className="text-lg font-semibold mb-4 text-black">
             ✏️ แก้ไขผู้ใช้
           </h2>
-          <input
-            value={editUser.username || ""}
-            onChange={(e) =>
-              setEditUser({ ...editUser, username: e.target.value })
-            }
-            placeholder="username"
-            className="border px-2 py-1 mr-2"
-          />
-          <input
-            value={editUser.email || ""}
-            onChange={(e) =>
-              setEditUser({ ...editUser, email: e.target.value })
-            }
-            placeholder="email"
-            className="border px-2 py-1 mr-2"
-          />
-          <input
-            value={editUser.phone || ""}
-            onChange={(e) =>
-              setEditUser({ ...editUser, phone: e.target.value })
-            }
-            placeholder="เบอร์โทร"
-            className="border px-2 py-1 mr-2"
-          />
-          <select
-            value={editUser.hospital_id}
-            onChange={(e) =>
-              setEditUser({ ...editUser, hospital_id: e.target.value })
-            }
-            className="border px-2 py-1 mr-2"
-            disabled={currentUser?.role !== "admin"} // ✅
-          >
-            <option value="">เลือกโรงพยาบาล</option>
-            {hospitals.map((h) => (
-              <option key={h.id} value={h.id}>
-                {h.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={editUser.ward_id}
-            onChange={(e) =>
-              setEditUser({ ...editUser, ward_id: e.target.value })
-            }
-            className="border px-2 py-1 mr-2"
-            disabled={currentUser?.role !== "admin"} // ✅
-          >
-            <option value="">เลือกวอร์ด</option>
-            {filteredWardsForEditUser.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={editUser.user_type}
-            onChange={(e) =>
-              setEditUser({ ...editUser, user_type: e.target.value })
-            }
-            className="border px-2 py-1 mr-2"
-          >
-            <option value="หัวหน้าพยาบาล">หัวหน้าพยาบาล</option>
-            <option value="หัวหน้าวอร์ด">หัวหน้าวอร์ด</option>
-            <option value="พยาบาล">พยาบาล</option>
-            <option value="ผู้ช่วยเหลือคนไข้">ผู้ช่วยเหลือคนไข้</option>
-            <option value="คนงาน">คนงาน</option>
-          </select>
 
-          {currentUser?.role === "admin" && (
-            <select
-              value={editUser.role}
-              onChange={(e) =>
-                setEditUser({ ...editUser, role: e.target.value })
-              }
-              className="border px-2 py-1 mr-2"
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Username */}
+            <div>
+              <label className="block font-semibold mb-1">👤 Username</label>
+              <input
+                value={editUser.username || ""}
+                onChange={(e) =>
+                  setEditUser({ ...editUser, username: e.target.value })
+                }
+                className="border px-2 py-1 w-full"
+              />
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block font-semibold mb-1">📧 Email</label>
+              <input
+                value={editUser.email || ""}
+                onChange={(e) =>
+                  setEditUser({ ...editUser, email: e.target.value })
+                }
+                className="border px-2 py-1 w-full"
+              />
+            </div>
+
+            {/* Phone */}
+            <div>
+              <label className="block font-semibold mb-1">📱 เบอร์โทร</label>
+              <input
+                value={editUser.phone || ""}
+                onChange={(e) =>
+                  setEditUser({ ...editUser, phone: e.target.value })
+                }
+                className="border px-2 py-1 w-full"
+              />
+            </div>
+
+            {/* Hospital */}
+            <div>
+              <label className="block font-semibold mb-1">🏥 โรงพยาบาล</label>
+              <select
+                value={editUser.hospital_id}
+                onChange={(e) =>
+                  setEditUser({ ...editUser, hospital_id: e.target.value })
+                }
+                className="border px-2 py-1 w-full"
+                disabled={currentUser?.role !== "admin"}
+              >
+                <option value="">เลือกโรงพยาบาล</option>
+                {hospitals.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Ward */}
+            <div>
+              <label className="block font-semibold mb-1">
+                🏨 วอร์ดที่สังกัด
+              </label>
+              <select
+                value={editUser.ward_id}
+                onChange={(e) =>
+                  setEditUser({ ...editUser, ward_id: e.target.value })
+                }
+                className="border px-2 py-1 w-full"
+                disabled={
+                  !(
+                    currentUser?.role === "admin" ||
+                    currentUser?.role === "customer-admin"
+                  )
+                }
+              >
+                <option value="">เลือกวอร์ด</option>
+                {filteredWardsForEditUser.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Shift Ward */}
+            <div>
+              <label className="block font-semibold mb-1">
+                📋 วอร์ดที่จัดเวร
+              </label>
+              <select
+                value={editUser.shift_ward_id}
+                onChange={(e) =>
+                  setEditUser({ ...editUser, shift_ward_id: e.target.value })
+                }
+                className="border px-2 py-1 w-full"
+                disabled={
+                  !(
+                    currentUser?.role === "admin" ||
+                    currentUser?.role === "customer-admin"
+                  )
+                }
+              >
+                <option value="">เลือกวอร์ด</option>
+                {filteredWardsForEditUser.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* User Type */}
+            <div>
+              <label className="block font-semibold mb-1">
+                👩‍⚕️ ประเภทผู้ใช้
+              </label>
+              <select
+                value={editUser.user_type}
+                onChange={(e) =>
+                  setEditUser({ ...editUser, user_type: e.target.value })
+                }
+                className="border px-2 py-1 w-full"
+              >
+                <option value="หัวหน้าพยาบาล">หัวหน้าพยาบาล</option>
+                <option value="หัวหน้าวอร์ด">หัวหน้าวอร์ด</option>
+                <option value="พยาบาล">พยาบาล</option>
+                <option value="ผู้ช่วยเหลือคนไข้">ผู้ช่วยเหลือคนไข้</option>
+                <option value="คนงาน">คนงาน</option>
+              </select>
+            </div>
+
+            {/* Role (admin only) */}
+            {currentUser?.role === "admin" && (
+              <div>
+                <label className="block font-semibold mb-1">
+                  🛠️ สิทธิ์ระบบ
+                </label>
+                <select
+                  value={editUser.role}
+                  onChange={(e) =>
+                    setEditUser({ ...editUser, role: e.target.value })
+                  }
+                  className="border px-2 py-1 w-full"
+                >
+                  <option value="customer">customer</option>
+                  <option value="admin">admin</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Action Buttons */}
+          <div className="mt-4 flex gap-4">
+            <button
+              onClick={handleUpdate}
+              className="bg-blue-600 text-white px-4 py-2 rounded"
             >
-              <option value="customer">customer</option>
-              <option value="admin">admin</option>
-            </select>
-          )}
-
-          <button
-            onClick={handleUpdate}
-            className="bg-blue-600 text-white px-3 py-1 rounded mr-2"
-          >
-            💾 บันทึก
-          </button>
-          <button
-            onClick={() => setEditUser(null)}
-            className="text-gray-600 underline"
-          >
-            ยกเลิก
-          </button>
+              💾 บันทึก
+            </button>
+            <button
+              onClick={() => setEditUser(null)}
+              className="text-gray-600 underline"
+            >
+              ยกเลิก
+            </button>
+          </div>
         </div>
       )}
 
@@ -394,7 +583,8 @@ export default function AdminUsers() {
             <th className="border px-2 py-1">Email</th>
             <th className="border px-2 py-1">เบอร์โทร</th>
             <th className="border px-2 py-1">โรงพยาบาล</th>
-            <th className="border px-2 py-1">วอร์ด</th>
+            <th className="border px-2 py-1">วอร์ดที่สังกัด</th>
+            <th className="border px-2 py-1">วอร์ดที่จัดเวร</th>
             <th className="border px-2 py-1">ประเภท</th>
             {currentUser?.role === "admin" && (
               <th className="border px-2 py-1">Role</th>
@@ -413,6 +603,12 @@ export default function AdminUsers() {
                 {user.hospitals?.name || "-"}
               </td>
               <td className="border px-2 py-1">{user.wards?.name || "-"}</td>
+              <td className="border px-2 py-1">
+                {
+                  wards.find((w) => w.id === user.shift_ward_id)?.name || "-" // แสดงชื่อวอร์ดจัดเวร
+                }
+              </td>
+
               <td className="border px-2 py-1">{user.user_type || "-"}</td>
               {currentUser?.role === "admin" && (
                 <td className="border px-2 py-1">{user.role}</td>

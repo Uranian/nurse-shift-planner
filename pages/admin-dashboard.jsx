@@ -25,7 +25,12 @@ export default function AdminDashboard() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6">🧭 แผงควบคุมผู้ดูแลระบบ</h1>
+      <h1 className="text-3xl font-bold mb-2">🧭 แผงควบคุมผู้ดูแลระบบ</h1>
+      {currentUser && (
+        <p className="text-white mb-6">
+          ผู้ใช้: {currentUser.username} ({currentUser.user_type || "ไม่ระบุ"})
+        </p>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         <Link href="/shift-planner">
@@ -71,18 +76,18 @@ export default function AdminDashboard() {
             >
               🧑‍⚕️ พยาบาล
             </button>
-            {/* ปุ่มผู้ใช้ */}
+
             <Link href="/admin-users">
               <button className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow">
                 👤 ผู้ใช้
               </button>
             </Link>
-            {/* ปุ่มตั้งค่าระบบ */}
+            {/*              
             <Link href="/system-settings">
               <button className="w-full px-4 py-3 bg-gray-700 text-white rounded shadow">
                 ⚙️ ตั้งค่าระบบ
               </button>
-            </Link>
+            </Link> */}
           </>
         )}
       </div>

@@ -10,27 +10,49 @@ export default function Login() {
   const router = useRouter();
 
   const handleLogin = async () => {
-    const { data, error } = await supabase
+    const { data: profile, error } = await supabase
       .from("profiles")
-      .select()
+      .select("id, username, hospital_id, ward_id, shift_ward_id, user_type, role")
       .eq("username", username)
       .eq("password", password)
       .single();
 
-    if (error || !data) {
+    if (error || !profile) {
       alert("เข้าสู่ระบบไม่สำเร็จ");
       return;
     }
 
-    localStorage.setItem("logged_in_user", JSON.stringify(data));
+    // 👉 ใช้ shift_ward_id ถ้ามี ไม่งั้นใช้ ward_id แทน
+    const finalWardId = profile.shift_ward_id || profile.ward_id;
 
-    // → เช็กว่า shift_planner_context มีค่าหรือไม่
-    const finalContext = localStorage.getItem("shift_planner_context");
-    if (!finalContext) {
-      router.push("/system-settings");
-    } else {
-      router.push("/shift-planner");
-    }
+    // 👉 ดึงชื่อโรงพยาบาล
+    const { data: hospital } = await supabase
+      .from("hospitals")
+      .select("name")
+      .eq("id", profile.hospital_id)
+      .single();
+
+    // 👉 ดึงชื่อวอร์ดที่ใช้จริง
+    const { data: ward } = await supabase
+      .from("wards")
+      .select("name")
+      .eq("id", finalWardId)
+      .single();
+
+    // 👉 เขียน context ลง localStorage
+    const context = {
+      hospital_id: profile.hospital_id,
+      hospital_name: hospital?.name || "",
+      ward_id: finalWardId,
+      ward_name: ward?.name || "",
+    };
+    localStorage.setItem("shift_planner_context", JSON.stringify(context));
+
+    // 👉 เก็บผู้ใช้ลง localStorage เผื่อใช้ที่อื่น
+    localStorage.setItem("logged_in_user", JSON.stringify(profile));
+
+    // 👉 ไปหน้า shift-planner ทันที
+    router.push("/shift-planner");
   };
 
   return (

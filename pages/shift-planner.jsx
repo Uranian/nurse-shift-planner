@@ -838,10 +838,11 @@ function ShiftPlanner() {
             </button>
           </Link> */}
           <Link href="/admin-dashboard">
-            <button className="px-3 py-2 bg-gray-800 text-white rounded">
-              🛠️ แผงควบคุมระบบ
-            </button>
-          </Link>
+  <button className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded">
+    🛠️ แผงควบคุมระบบ
+  </button>
+</Link>
+
           {!currentUser ? (
             <button
               onClick={() => router.push("/login")}
@@ -850,23 +851,28 @@ function ShiftPlanner() {
               🔐 เข้าสู่ระบบ
             </button>
           ) : (
-            <button
-              onClick={() => {
-                // ลบข้อมูลผู้ใช้
-                localStorage.removeItem("logged_in_user");
+            <div className="flex items-center gap-4">
+              {/* 👤 ข้อความผู้ใช้ อยู่หน้าปุ่ม */}
+              <span className="text-white bg-gray-700 px-3 py-1 rounded text-sm">
+                ผู้ใช้: {currentUser.username}
+                {currentUser.user_type ? ` (${currentUser.user_type})` : ""}
+              </span>
 
-                // ลบ state ปัจจุบัน
-                setCurrentUser(null);
-                toast.success("👋 ออกจากระบบเรียบร้อย");
-
-                window.location.href = "/login"; // ย้อนกลับไปหน้าล็อกอิน
-                // window.location.href = "/shift-planner"; // ไปหน้า shift-planner ทันที
-              }}
-              className="bg-red-500 text-white px-4 py-2 rounded"
-            >
-              ออกจากระบบ
-            </button>
+              {/* 🔴 ปุ่มออกจากระบบ */}
+              <button
+                onClick={() => {
+                  localStorage.removeItem("logged_in_user");
+                  setCurrentUser(null);
+                  toast.success("👋 ออกจากระบบเรียบร้อย");
+                  window.location.href = "/login";
+                }}
+                className="bg-red-500 text-white px-4 py-2 rounded"
+              >
+                ออกจากระบบ
+              </button>
+            </div>
           )}
+
           {/* <button
             onClick={() => {
               const defaultContext = {

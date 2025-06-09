@@ -32,6 +32,8 @@ export default function NurseManagerPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
 
+  const [addingNew, setAddingNew] = useState(false);
+
   useEffect(() => {
     const stored = localStorage.getItem("logged_in_user");
     if (stored) {
@@ -227,163 +229,173 @@ export default function NurseManagerPage() {
         onChange={(e) => setSearchTerm(e.target.value)}
         className="border px-3 py-1 mb-3 w-full"
       />
+      {(addingNew || editId) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4 bg-white p-4 text-black">
+          <input
+            placeholder="ชื่อเรียก (ชื่อเล่น)"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            className="border px-2 py-1 bg-white text-black"
+          />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4 bg-white p-4 text-black">
-        <input
-          placeholder="ชื่อเรียก (ชื่อเล่น)"
-          value={formData.name}
-          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          className="border px-2 py-1 bg-white text-black"
-        />
+          <input
+            placeholder="ชื่อ"
+            value={formData.first_name}
+            onChange={(e) =>
+              setFormData({ ...formData, first_name: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+          />
+          <input
+            placeholder="นามสกุล"
+            value={formData.last_name}
+            onChange={(e) =>
+              setFormData({ ...formData, last_name: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+          />
+          <input
+            placeholder="ตำแหน่ง"
+            value={formData.position}
+            onChange={(e) =>
+              setFormData({ ...formData, position: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+          />
+          <input
+            placeholder="คุณวุฒิ"
+            value={formData.qualification}
+            onChange={(e) =>
+              setFormData({ ...formData, qualification: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+          />
+          <input
+            placeholder="เบอร์โทร"
+            value={formData.phone}
+            onChange={(e) =>
+              setFormData({ ...formData, phone: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+          />
+          <input
+            placeholder="LINE ID"
+            value={formData.line_id}
+            onChange={(e) =>
+              setFormData({ ...formData, line_id: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+          />
 
-        <input
-          placeholder="ชื่อ"
-          value={formData.first_name}
-          onChange={(e) =>
-            setFormData({ ...formData, first_name: e.target.value })
-          }
-          className="border px-2 py-1 bg-white text-black"
-        />
-        <input
-          placeholder="นามสกุล"
-          value={formData.last_name}
-          onChange={(e) =>
-            setFormData({ ...formData, last_name: e.target.value })
-          }
-          className="border px-2 py-1 bg-white text-black"
-        />
-        <input
-          placeholder="ตำแหน่ง"
-          value={formData.position}
-          onChange={(e) =>
-            setFormData({ ...formData, position: e.target.value })
-          }
-          className="border px-2 py-1 bg-white text-black"
-        />
-        <input
-          placeholder="คุณวุฒิ"
-          value={formData.qualification}
-          onChange={(e) =>
-            setFormData({ ...formData, qualification: e.target.value })
-          }
-          className="border px-2 py-1 bg-white text-black"
-        />
-        <input
-          placeholder="เบอร์โทร"
-          value={formData.phone}
-          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-          className="border px-2 py-1 bg-white text-black"
-        />
-        <input
-          placeholder="LINE ID"
-          value={formData.line_id}
-          onChange={(e) =>
-            setFormData({ ...formData, line_id: e.target.value })
-          }
-          className="border px-2 py-1 bg-white text-black"
-        />
+          <select
+            value={formData.hospital_id}
+            onChange={(e) =>
+              setFormData({ ...formData, hospital_id: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+            disabled={currentUser?.role !== "admin"} // ✅ ใส่ตรงนี้
+          >
+            <option value="">เลือกโรงพยาบาล</option>
+            {hospitals.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.name}
+              </option>
+            ))}
+          </select>
 
-        <select
-          value={formData.hospital_id}
-          onChange={(e) =>
-            setFormData({ ...formData, hospital_id: e.target.value })
-          }
-          className="border px-2 py-1 bg-white text-black"
-          disabled={currentUser?.role !== "admin"} // ✅ ใส่ตรงนี้
-        >
-          <option value="">เลือกโรงพยาบาล</option>
-          {hospitals.map((h) => (
-            <option key={h.id} value={h.id}>
-              {h.name}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={formData.ward_id}
-          onChange={(e) =>
-            setFormData({ ...formData, ward_id: e.target.value })
-          }
-          className="border px-2 py-1 bg-white text-black"
-          disabled={
-            currentUser?.role !== "admin" &&
-            currentUser?.user_type !== "หัวหน้าพยาบาล"
-          }
-        >
-          <option value="">เลือกวอร์ด</option>
-          {wards.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.name}
-            </option>
-          ))}
-        </select>
-        <div className="flex items-center space-x-4">
-          <label className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              checked={formData.is_active_for_shift}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  is_active_for_shift: e.target.checked,
-                })
-              }
-            />
-            <span>ใช้งานในตารางเวร</span>
-          </label>
-
-          <div className="flex flex-col">
-            <label className="mb-1 text-sm font-medium whitespace-nowrap">
-              ลำดับแสดงผล
+          <select
+            value={formData.ward_id}
+            onChange={(e) =>
+              setFormData({ ...formData, ward_id: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+            disabled={
+              currentUser?.role !== "admin" &&
+              currentUser?.user_type !== "หัวหน้าพยาบาล"
+            }
+          >
+            <option value="">เลือกวอร์ด</option>
+            {wards.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.is_active_for_shift}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    is_active_for_shift: e.target.checked,
+                  })
+                }
+              />
+              <span>ใช้งานในตารางเวร</span>
             </label>
-            <input
-              type="number"
-              placeholder="ลำดับ"
-              value={formData.display_order}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  display_order: Number(e.target.value),
-                })
-              }
-              className="border px-2 py-1 w-24"
-            />
+
+            <div className="flex flex-col">
+              <label className="mb-1 text-sm font-medium whitespace-nowrap">
+                ลำดับแสดงผล
+              </label>
+              <input
+                type="number"
+                placeholder="ลำดับ"
+                value={formData.display_order}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    display_order: Number(e.target.value),
+                  })
+                }
+                className="border px-2 py-1 w-24"
+              />
+            </div>
+
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.is_active_for_massage}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    is_active_for_massage: e.target.checked,
+                  })
+                }
+              />
+              <span>ใช้งานในนัดนวด</span>
+            </label>
           </div>
-
-          <label className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              checked={formData.is_active_for_massage}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  is_active_for_massage: e.target.checked,
-                })
-              }
-            />
-            <span>ใช้งานในนัดนวด</span>
-          </label>
         </div>
-      </div>
-
-      <button
-        onClick={saveNurse}
-        className={`px-4 py-2 ${
-          editId ? "bg-yellow-500" : "bg-green-600"
-        } text-white rounded`}
-      >
-        {editId ? "💾 บันทึกการแก้ไข" : "💾 เพิ่มพยาบาล"}
-      </button>
-      {editId && (
+      )}
+      {!editId && !addingNew ? (
         <button
-          onClick={() => {
-            setEditId(null);
-            resetForm();
-          }}
-          className="ml-2 px-4 py-2 bg-gray-500 text-white rounded"
+          onClick={() => setAddingNew(true)}
+          className="px-4 py-2 bg-green-600 text-white rounded"
         >
-          ❌ ยกเลิก
+          ➕ เพิ่มพยาบาล
         </button>
+      ) : (
+        <>
+          <button
+            onClick={saveNurse}
+            className="px-4 py-2 bg-orange-500 text-white rounded"
+          >
+            💾 บันทึกพยาบาลใหม่
+          </button>
+          <button
+            onClick={() => {
+              resetForm();
+              setEditId(null);
+              setAddingNew(false);
+            }}
+            className="ml-2 px-4 py-2 bg-gray-500 text-white rounded"
+          >
+            ❌ ยกเลิก
+          </button>
+        </>
       )}
 
       <hr className="my-4" />
@@ -456,8 +468,12 @@ export default function NurseManagerPage() {
       {showConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 shadow-lg w-80 text-center">
-            <h2 className="text-lg font-semibold mb-4 text-black">ยืนยันการลบ</h2>
-            <p className="mb-6 text-black">คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลพยาบาลนี้?</p>
+            <h2 className="text-lg font-semibold mb-4 text-black">
+              ยืนยันการลบ
+            </h2>
+            <p className="mb-6 text-black">
+              คุณแน่ใจหรือไม่ว่าต้องการลบข้อมูลพยาบาลนี้?
+            </p>
             <div className="flex justify-center gap-4">
               <button
                 onClick={deleteNurseConfirmed}
