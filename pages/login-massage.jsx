@@ -1,10 +1,9 @@
-// 📄 src/pages/login.jsx
-
+// 📄 pages/login-massage.jsx
 import React, { useState } from "react";
 import { useRouter } from "next/router";
 import { supabase } from "../lib/supabaseClient";
 
-export default function Login() {
+export default function LoginMassage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const router = useRouter();
@@ -24,42 +23,39 @@ export default function Login() {
       return;
     }
 
-    // 👉 ใช้ shift_ward_id ถ้ามี ไม่งั้นใช้ ward_id แทน
     const finalWardId = profile.shift_ward_id || profile.ward_id;
 
-    // 👉 ดึงชื่อโรงพยาบาล
     const { data: hospital } = await supabase
       .from("hospitals")
       .select("name")
       .eq("id", profile.hospital_id)
       .single();
 
-    // 👉 ดึงชื่อวอร์ดที่ใช้จริง
     const { data: ward } = await supabase
       .from("wards")
       .select("name")
       .eq("id", finalWardId)
       .single();
 
-    // 👉 เขียน context ลง localStorage
+    // ✅ บันทึก context สำหรับระบบ massage
     const context = {
       hospital_id: profile.hospital_id,
       hospital_name: hospital?.name || "",
       ward_id: finalWardId,
       ward_name: ward?.name || "",
     };
-    localStorage.setItem("shift_planner_context", JSON.stringify(context));
+    localStorage.setItem("massage_planner_context", JSON.stringify(context));
 
-    // 👉 เก็บผู้ใช้ลง localStorage เผื่อใช้ที่อื่น
+    // ✅ เก็บผู้ใช้ลง localStorage เผื่อใช้ในระบบทั่วไป
     localStorage.setItem("logged_in_user", JSON.stringify(profile));
 
-    // 👉 ไปหน้า shift-planner ทันที
-    router.push("/shift-planner");
+    // ✅ ไปที่ระบบนัดหมอนวด
+    router.push("/massage-planner");
   };
 
   return (
     <div className="p-4 max-w-sm mx-auto">
-      <h1 className="text-xl font-bold mb-4">🔐 เข้าสู่ระบบ</h1>
+      <h1 className="text-xl font-bold mb-4">🔐 เข้าสู่ระบบ (ระบบนวด)</h1>
       <input
         type="text"
         value={username}

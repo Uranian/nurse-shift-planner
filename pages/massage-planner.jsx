@@ -1,5 +1,8 @@
+// 📄 pages/massage-planner.jsx
+
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/router";
+import Link from "next/link";
 import { supabase } from "../lib/supabaseClient";
 import { toast } from "react-toastify";
 import dayjs from "dayjs";
@@ -59,10 +62,10 @@ export default function MassagePlannerPage() {
 
     fetchBookings();
   }, [hospitalId, year, month]);
- 
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const prefs = JSON.parse(localStorage.getItem("user_context"));
+    const prefs = JSON.parse(localStorage.getItem("massage_planner_context"));
     if (prefs?.hospital_id) {
       setHospitalId(prefs.hospital_id);
       setHospitalName(prefs.hospital_name || "");
@@ -132,9 +135,55 @@ export default function MassagePlannerPage() {
     }
   }
 
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("logged_in_user");
+      if (stored) setCurrentUser(JSON.parse(stored));
+    }
+  }, []);
+
   return (
     <div className="p-4 min-h-screen bg-white text-black dark:bg-black dark:text-white">
-      <h1 className="text-2xl font-bold mb-1">💆‍♀️ จัดคิวนวดแผนไทย</h1>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
+        <h1 className="text-2xl font-bold">💆‍♀️ จัดคิวนวดแผนไทย</h1>
+
+        <div className="flex items-center gap-4">
+          <Link href="/admin-dashboard">
+            <button className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded">
+              🛠️ แผงควบคุมระบบ
+            </button>
+          </Link>
+
+          {!currentUser ? (
+            <button
+              onClick={() => router.push("/login-massage")}
+              className="bg-blue-500 text-white px-4 py-2 rounded"
+            >
+              🔐 เข้าสู่ระบบ
+            </button>
+          ) : (
+            <>
+              <span className="text-white bg-gray-700 px-3 py-1 rounded text-sm">
+                ผู้ใช้: {currentUser.username}
+                {currentUser.user_type ? ` (${currentUser.user_type})` : ""}
+              </span>
+              <button
+                onClick={() => {
+                  localStorage.removeItem("logged_in_user");
+                  setCurrentUser(null);
+                  toast.success("👋 ออกจากระบบเรียบร้อย");
+                  window.location.href = "/login-massage";
+                }}
+                className="bg-red-500 text-white px-4 py-2 rounded"
+              >
+                ออกจากระบบ
+              </button>
+            </>
+          )}
+        </div>
+      </div>
       <p className="mb-4">
         🏥 <strong>{hospitalName}</strong>
       </p>
