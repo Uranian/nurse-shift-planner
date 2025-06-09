@@ -115,8 +115,20 @@ export default function AdminUsers() {
       (currentUser?.role !== "admin" && !newUser.role)
     ) {
       toast.error(
-        "กรุณากรอก Username, รหัสผ่าน (เลข 8 หลัก), โรงพยาบาล, วอร์ด และประเภทผู้ใช้"
+        "กรุณากรอก Username, รหัสผ่าน (เลข 8 หลัก), โรงพยาบาล, วอร์ดที่สังกัด วอร์ดที่จัดเวร และประเภทผู้ใช้"
       );
+      return;
+    }
+
+    // ✅ ตรวจสอบว่า username ซ้ำหรือไม่
+    const { data: existingUser } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("username", newUser.username)
+      .maybeSingle();
+
+    if (existingUser) {
+      toast.error("❗ มีชื่อผู้ใช้นี้อยู่ในระบบแล้ว");
       return;
     }
 
@@ -125,7 +137,15 @@ export default function AdminUsers() {
       delete payload.role; // ✅ ลบ role ถ้าไม่ใช่ admin
     }
 
-    await supabase.from("profiles").insert([payload]);
+    console.log("payload", payload);
+
+    const { error } = await supabase.from("profiles").insert([payload]);
+    if (error) {
+      console.error("Insert failed:", error);
+      toast.error(`เพิ่มผู้ใช้ล้มเหลว: ${error.message}`);
+      return;
+    }
+
     setNewUser({
       username: "",
       nickname: "",
@@ -363,6 +383,7 @@ export default function AdminUsers() {
                 onChange={(e) => handleChange("role", e.target.value)}
                 className="border px-2 py-1 w-full"
               >
+                <option value="customer-admin">customer-admin</option>
                 <option value="customer">customer</option>
                 <option value="admin">admin</option>
               </select>

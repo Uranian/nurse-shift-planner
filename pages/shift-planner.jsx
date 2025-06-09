@@ -56,6 +56,8 @@ function ShiftPlanner() {
 
   const lastWarnings = useRef(new Set());
 
+  const [showReset, setShowReset] = useState(true);
+
   const viewPlanDetails = async (planId, name) => {
     const { data, error } = await supabase
       .from("nurse_shifts")
@@ -652,6 +654,27 @@ function ShiftPlanner() {
     setShowPlanDialog(false);
   };
 
+  const handleReset = () => {
+    const defaultContext = {
+      hospital_id: DEFAULT_HOSPITAL_ID,
+      ward_id: DEFAULT_WARD_ID,
+      hospital_name: DEFAULT_HOSPITAL_NAME,
+      ward_name: DEFAULT_WARD_NAME,
+    };
+
+    localStorage.setItem(
+      "shift_planner_context",
+      JSON.stringify(defaultContext)
+    );
+    toast.success("✅ รีเซ็ตการตั้งค่าเรียบร้อยแล้ว กำลังกลับไปหน้าจัดเวร...");
+    setShowReset(false); // 👈 ซ่อนปุ่มทันที
+
+    // 🔽 ให้เวลาก่อนเปลี่ยนหน้า
+    setTimeout(() => {
+      window.location.href = "/shift-planner";
+    }, 500); // 0.5 วินาที
+  };
+
   return (
     <div className="overflow-auto p-4">
       {showPlanDialog && (
@@ -838,11 +861,10 @@ function ShiftPlanner() {
             </button>
           </Link> */}
           <Link href="/admin-dashboard">
-  <button className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded">
-    🛠️ แผงควบคุมระบบ
-  </button>
-</Link>
-
+            <button className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded">
+              🛠️ แผงควบคุมระบบ
+            </button>
+          </Link>
           {!currentUser ? (
             <button
               onClick={() => router.push("/login")}
@@ -872,25 +894,13 @@ function ShiftPlanner() {
               </button>
             </div>
           )}
-
           {/* <button
             onClick={() => {
-              const defaultContext = {
-                hospital_id: DEFAULT_HOSPITAL_ID,
-                ward_id: DEFAULT_WARD_ID,
-                hospital_name: DEFAULT_HOSPITAL_NAME,
-                ward_name: DEFAULT_WARD_NAME,
-              };
-              localStorage.setItem(
-                "shift_planner_context",
-                JSON.stringify(defaultContext)
-              );
-              toast.success(
-                "✅ รีเซ็ตการตั้งค่าเรียบร้อยแล้ว กำลังกลับไปหน้าจัดเวร..."
-              );
-              window.location.href = "/shift-planner"; // ไปหน้า shift-planner ทันที
+              setShowReset(false);
+              setTimeout(() => {
+                window.location.href = "/shift-planner";
+              }, 500);
             }}
-            className="px-3 py-2 bg-red-500 text-white rounded"
           >
             🧹 ล้างระบบ
           </button> */}
