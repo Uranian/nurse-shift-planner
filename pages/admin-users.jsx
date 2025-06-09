@@ -128,6 +128,7 @@ export default function AdminUsers() {
     await supabase.from("profiles").insert([payload]);
     setNewUser({
       username: "",
+      nickname: "",
       email: "",
       password: "",
       phone: "",
@@ -152,6 +153,7 @@ export default function AdminUsers() {
     const updatedFields = {
       email: editUser.email,
       username: editUser.username,
+      nickname: editUser.nickname,
       phone: editUser.phone,
       hospital_id: editUser.hospital_id,
       ward_id: editUser.ward_id,
@@ -244,6 +246,18 @@ export default function AdminUsers() {
               type="password"
               value={newUser.password}
               onChange={(e) => handleChange("password", e.target.value)}
+              className="border px-2 py-1 w-full"
+            />
+          </div>
+          <div>
+            <label className="block font-semibold mb-1">
+              🏷️ ชื่อเล่น (Nickname)
+            </label>
+            <input
+              value={newUser.nickname || ""}
+              onChange={(e) =>
+                setNewUser({ ...newUser, nickname: e.target.value })
+              }
               className="border px-2 py-1 w-full"
             />
           </div>
@@ -369,7 +383,8 @@ export default function AdminUsers() {
                 ...prev,
                 hospital_id: currentUser?.hospital_id || "", // ✅ ล็อกโรงพยาบาล
               }));
-              setShowAddUserForm(true);
+              setEditUser(null); // ✅ ปิดโหมดแก้ไข
+              setShowAddUserForm(true); // เปิดฟอร์มเพิ่มใหม่
             }
           }}
           className="bg-green-600 text-white px-3 py-1 rounded"
@@ -384,6 +399,7 @@ export default function AdminUsers() {
               setShowAddUserForm(false);
               setNewUser({
                 username: "",
+                nickname: "",
                 email: "",
                 password: "",
                 phone: "",
@@ -419,7 +435,19 @@ export default function AdminUsers() {
                 className="border px-2 py-1 w-full"
               />
             </div>
-
+            {/* Nickname */}
+            <div>
+              <label className="block font-semibold mb-1">
+                🏷️ ชื่อเล่น (Nickname)
+              </label>
+              <input
+                value={editUser.nickname || ""}
+                onChange={(e) =>
+                  setEditUser({ ...editUser, nickname: e.target.value })
+                }
+                className="border px-2 py-1 w-full"
+              />
+            </div>
             {/* Email */}
             <div>
               <label className="block font-semibold mb-1">📧 Email</label>
@@ -580,6 +608,7 @@ export default function AdminUsers() {
         <thead>
           <tr>
             <th className="border px-2 py-1">Username</th>
+            <th className="border px-2 py-1">ชื่อเล่น</th>
             <th className="border px-2 py-1">Email</th>
             <th className="border px-2 py-1">เบอร์โทร</th>
             <th className="border px-2 py-1">โรงพยาบาล</th>
@@ -597,6 +626,7 @@ export default function AdminUsers() {
           {filtered.map((user) => (
             <tr key={user.id}>
               <td className="border px-2 py-1">{user.username || "-"}</td>
+              <td className="border px-2 py-1">{user.nickname || "-"}</td>
               <td className="border px-2 py-1">{user.email}</td>
               <td className="border px-2 py-1">{user.phone || "-"}</td>
               <td className="border px-2 py-1">
@@ -616,7 +646,10 @@ export default function AdminUsers() {
 
               <td className="border px-2 py-1">
                 <button
-                  onClick={() => setEditUser(user)}
+                  onClick={() => {
+                    setShowAddUserForm(false); // ✅ ปิดฟอร์มเพิ่มใหม่
+                    setEditUser(user); // แสดงแบบฟอร์มแก้ไข
+                  }}
                   className="text-blue-600 hover:underline mr-2"
                 >
                   แก้ไข
