@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import MainMenu from "../components/MainMenu";
- 
+
 export default function AdminAppointments() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,7 +34,7 @@ export default function AdminAppointments() {
     };
 
     fetch();
-  }, []);
+  }, [currentUser]);
 
   if (!currentUser || currentUser.role !== "admin")
     return <p>⛔️ ต้องเข้าสู่ระบบในฐานะแอดมิน</p>;

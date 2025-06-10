@@ -4,16 +4,18 @@ import React, { useState, useEffect } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { toast } from "react-toastify";
 import dayjs from "dayjs";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 import MainMenu from "../components/MainMenu";
 
 export default function ConsultantAvailabilityPage() {
   const [currentUser, setCurrentUser] = useState(null);
-  const [date, setDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [startTime, setStartTime] = useState("09:00");
   const [endTime, setEndTime] = useState("12:00");
   const [slotDuration, setSlotDuration] = useState(60); // นาที
   const [price, setPrice] = useState(500);
   const [availabilityList, setAvailabilityList] = useState([]);
+  const [date, setDate] = useState(new Date());
 
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem("logged_in_user"));
@@ -62,7 +64,7 @@ export default function ConsultantAvailabilityPage() {
 
     const payload = {
       user_id: currentUser.id,
-      date,
+      date: dayjs(date).format("YYYY-MM-DD"),
       start_time: startTime,
       end_time: endTime,
       slot_duration: parseInt(slotDuration),
@@ -97,11 +99,11 @@ export default function ConsultantAvailabilityPage() {
         <div className="space-y-4">
           <div>
             <label>📆 วันที่</label>
-            <input
-              type="date"
+            <DatePicker
+              selected={date}
+              onChange={(date) => setDate(date)}
               className="border p-1 w-full"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+              dateFormat="yyyy-MM-dd"
             />
           </div>
 

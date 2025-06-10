@@ -1,6 +1,8 @@
 // 📄 pages/consultant-booking.jsx
 
 import React, { useEffect, useState } from "react";
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 import dayjs from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
@@ -15,32 +17,20 @@ dayjs.extend(isSameOrBefore);
 
 const hours = [
   "08:00",
-  "08:30",
   "09:00",
-  "09:30",
   "10:00",
-  "10:30",
   "11:00",
-  "11:30",
   "12:00",
-  "12:30",
   "13:00",
-  "13:30",
   "14:00",
-  "14:30",
   "15:00",
-  "15:30",
   "16:00",
-  "16:30",
 ];
 
 export default function ConsultantBooking() {
   const [consultants, setConsultants] = useState([]);
   const [availabilities, setAvailabilities] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(
-    dayjs().format("YYYY-MM-DD")
-  );
-
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [appointments, setAppointments] = useState([]);
@@ -189,21 +179,26 @@ export default function ConsultantBooking() {
   };
 
   return (
-    <div className="p-4">
+    <div className="p-4 overflow-visible">
       <MainMenu />
       <div className="p-4 max-w-full overflow-x-auto">
         <h1 className="text-2xl font-bold mb-4">📋 ตารางจองเวลาที่ปรึกษา</h1>
 
         <div className="mb-4">
           <label className="font-semibold mr-2">เลือกวันที่:</label>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="border px-2 py-1"
-          />
+          <div className="relative z-50 w-fit overflow-visible">
+            <DatePicker
+              selected={dayjs(selectedDate).toDate()}
+              onChange={(date) =>
+                setSelectedDate(dayjs(date).format("YYYY-MM-DD"))
+              }
+              dateFormat="yyyy-MM-dd"
+              className="border px-2 py-1"
+              popperPlacement="bottom-start"
+              portalId="root-portal" // 🔥 สำคัญ
+            />
+          </div>
         </div>
-
         <table className="min-w-max table-auto border border-collapse border-gray-300">
           <thead>
             <tr>

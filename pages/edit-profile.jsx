@@ -84,9 +84,7 @@ export default function EditProfile() {
           />
         </div>
         <div className="mb-3">
-          <label className="block font-semibold text-black">
-            ชื่อเล่น (nickname):
-          </label>
+          <label className="block font-semibold text-black">ชื่อเล่น:</label>
           <input
             type="text"
             name="nickname"
@@ -97,7 +95,7 @@ export default function EditProfile() {
         </div>
         <div className="mb-3">
           <label className="block font-semibold text-black">
-            ชื่อเต็ม (full name):
+            ฉายา/ชื่อในวงการ/ชื่ออื่น ๆ ที่ต้องการใช้:
           </label>
           <input
             type="text"
@@ -108,9 +106,7 @@ export default function EditProfile() {
           />
         </div>
         <div className="mb-3">
-          <label className="block font-semibold text-black">
-            ชื่อจริง (first name):
-          </label>
+          <label className="block font-semibold text-black">ชื่อจริง:</label>
           <input
             type="text"
             name="first_name"
@@ -120,9 +116,7 @@ export default function EditProfile() {
           />
         </div>
         <div className="mb-3">
-          <label className="block font-semibold text-black">
-            นามสกุล (last name):
-          </label>
+          <label className="block font-semibold text-black">นามสกุลจริง:</label>
           <input
             type="text"
             name="last_name"
@@ -134,7 +128,7 @@ export default function EditProfile() {
         {form.user_type_booking === "ที่ปรึกษา" && (
           <div className="mb-3">
             <label className="block font-semibold text-black">
-              คำอธิบาย (ความเชี่ยวชาญ):
+              คำอธิบาย/ความถนัด/ความเชี่ยวชาญ:
             </label>
             <textarea
               name="description"

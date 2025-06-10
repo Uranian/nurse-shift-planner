@@ -32,7 +32,7 @@ export default function Home() {
         </div>
 
         <div>
-          <Link href="/login-to-consultant-booking">
+          <Link href="/consultant-availability">
             <button className="bg-purple-600 text-white px-6 py-3 rounded shadow">
               🧠 นัดที่ปรึกษา
             </button>

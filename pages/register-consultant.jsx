@@ -98,7 +98,7 @@ export default function RegisterConsultant() {
           <input
             name="full_name"
             onChange={handleChange}
-            placeholder="ชื่อ-นามสกุล"
+            placeholder="ฉายา/ชื่อในวงการ/ชื่ออื่น ๆ ที่ต้องการใช้"
             className="w-full border px-2 py-1"
           />
           <input
@@ -110,14 +110,14 @@ export default function RegisterConsultant() {
           <input
             name="last_name"
             onChange={handleChange}
-            placeholder="นามสกุล"
+            placeholder="นามสกุลจริง"
             className="w-full border px-2 py-1"
           />
 
           <textarea
             name="description"
             onChange={handleChange}
-            placeholder="สรรพคุณ/ความถนัด"
+            placeholder="คำอธิบาย/ความถนัด/ความเชี่ยวชาญ"
             className="w-full border px-2 py-1"
           />
           <button

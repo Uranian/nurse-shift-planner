@@ -1,4 +1,5 @@
 // 📄 components/MainMenu.jsx
+
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -19,9 +20,9 @@ export default function MainMenu() {
         {/* เมนูซ้าย */}
         <ul className="flex flex-wrap gap-4">
           <li>
-            <Link href="/login-to-consultant-booking">
-              <button className="bg-blue-500 text-white px-4 py-2 rounded">
-                🏠 หน้าแรก
+            <Link href="/consultant-booking">
+              <button className="bg-purple-600 text-white px-4 py-2 rounded">
+                📋 จองเวลาที่ปรึกษา
               </button>
             </Link>
           </li>
@@ -55,54 +56,58 @@ export default function MainMenu() {
             </>
           )}
 
-          {userType === "ที่ปรึกษา" && (
+          {!currentUser && (
             <li>
-              <Link href="/consultant-availability">
-                <button className="bg-green-600 text-white px-4 py-2 rounded">
-                  🗓️ จัดตารางให้คำปรึกษา
-                </button>
-              </Link>
-            </li>
-          )}
-
-          <li>
-            <Link href="/consultant-booking">
-              <button className="bg-purple-600 text-white px-4 py-2 rounded">
-                📋 จองเวลาที่ปรึกษา
-              </button>
-            </Link>
-          </li>
-
-          <li>
-            <Link href="/my-appointments">
-              <button className="bg-teal-600 text-white px-4 py-2 rounded">
-                📑 ประวัติการจองของฉัน
-              </button>
-            </Link>
-          </li>
-
-          {role === "admin" && (
-            <li>
-              <Link href="/admin-appointments">
-                <button className="bg-red-600 text-white px-4 py-2 rounded">
-                  🧑‍💼 การจองทั้งหมด (admin)
+              <Link href="/login-to-consultant-booking">
+                <button className="bg-blue-500 text-white px-4 py-2 rounded">
+                  🔐 เข้าสู่ระบบ
                 </button>
               </Link>
             </li>
           )}
 
           {currentUser && (
-            <li>
-              <button
-                onClick={() => {
-                  localStorage.removeItem("logged_in_user");
-                  window.location.href = "/login-to-consultant-booking";
-                }}
-                className="bg-gray-500 text-white px-4 py-2 rounded"
-              >
-                🚪 ออกจากระบบ
-              </button>
-            </li>
+            <>
+              {userType === "ที่ปรึกษา" && (
+                <li>
+                  <Link href="/consultant-availability">
+                    <button className="bg-green-600 text-white px-4 py-2 rounded">
+                      🗓️ จัดตารางให้คำปรึกษา
+                    </button>
+                  </Link>
+                </li>
+              )}
+
+              <li>
+                <Link href="/my-appointments">
+                  <button className="bg-teal-600 text-white px-4 py-2 rounded">
+                    📑 ประวัติการจองของฉัน
+                  </button>
+                </Link>
+              </li>
+
+              {role === "admin" && (
+                <li>
+                  <Link href="/admin-appointments">
+                    <button className="bg-red-600 text-white px-4 py-2 rounded">
+                      🧑‍💼 การจองทั้งหมด (admin)
+                    </button>
+                  </Link>
+                </li>
+              )}
+
+              <li>
+                <button
+                  onClick={() => {
+                    localStorage.removeItem("logged_in_user");
+                    window.location.href = "/login-to-consultant-booking";
+                  }}
+                  className="bg-gray-500 text-white px-4 py-2 rounded"
+                >
+                  🚪 ออกจากระบบ
+                </button>
+              </li>
+            </>
           )}
         </ul>
 

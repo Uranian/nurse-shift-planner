@@ -1,4 +1,5 @@
 // 📄 pages/my-appointments.jsx
+
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import dayjs from "dayjs";
@@ -33,7 +34,7 @@ export default function MyAppointments() {
     };
 
     fetch();
-  }, []);
+  }, [currentUser]);
 
   if (!currentUser) return <p>กรุณาเข้าสู่ระบบ</p>;
   if (loading) return <p>กำลังโหลด...</p>;
