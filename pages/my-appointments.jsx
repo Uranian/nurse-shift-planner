@@ -7,7 +7,14 @@ import MainMenu from "../components/MainMenu";
 export default function MyAppointments() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const currentUser = JSON.parse(localStorage.getItem("logged_in_user"));
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("logged_in_user");
+      if (stored) setCurrentUser(JSON.parse(stored));
+    }
+  }, []);
 
   useEffect(() => {
     if (!currentUser) return;

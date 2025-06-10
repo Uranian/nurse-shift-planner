@@ -2,11 +2,19 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import MainMenu from "../components/MainMenu";
-
+ 
 export default function AdminAppointments() {
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const currentUser = JSON.parse(localStorage.getItem("logged_in_user"));
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    // ✅ ป้องกัน SSR error
+    if (typeof window !== "undefined") {
+      const storedUser = localStorage.getItem("logged_in_user");
+      if (storedUser) setCurrentUser(JSON.parse(storedUser));
+    }
+  }, []);
 
   useEffect(() => {
     if (!currentUser || currentUser.role !== "admin") return;
