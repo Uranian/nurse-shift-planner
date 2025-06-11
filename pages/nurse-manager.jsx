@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { supabase } from "../lib/supabaseClient";
+import Link from "next/link";
 
 export default function NurseManagerPage() {
   const [nurses, setNurses] = useState([]);
@@ -18,16 +19,20 @@ export default function NurseManagerPage() {
     phone: "",
     line_id: "",
     display_order: 0,
+    display_name: "",
     hospital_id: "",
     ward_id: "",
     is_active_for_shift: true,
-    is_active_for_massage: false, // ✅ เพิ่มตรงนี้
+    is_active_for_massage: false,
   });
 
   const [wards, setWards] = useState([]);
   const [hospitals, setHospitals] = useState([]);
   const [editId, setEditId] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null); // 👈 เพิ่มบนสุดก่อน useEffect
+  const [currentUser, setCurrentUser] = useState(null);
+  const isAdmin = currentUser?.role === "admin";
+  const isHeadNurse = currentUser?.user_type === "หัวหน้าพยาบาล";
+  const isWardHead = currentUser?.user_type === "หัวหน้าวอร์ด";
 
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
@@ -53,7 +58,6 @@ export default function NurseManagerPage() {
     fetchNurses();
   }, [currentUser]);
 
-  // ✅ โหลดวอร์ดใหม่เมื่อ hospital_id หรือ currentUser เปลี่ยน
   useEffect(() => {
     if (!currentUser) return;
 
@@ -63,7 +67,7 @@ export default function NurseManagerPage() {
       if (formData.hospital_id) {
         query = query.eq("hospital_id", formData.hospital_id);
       } else {
-        setWards([]); // ยังไม่เลือกโรงพยาบาล
+        setWards([]);
         return;
       }
     } else if (currentUser.user_type === "หัวหน้าพยาบาล") {
@@ -100,17 +104,13 @@ export default function NurseManagerPage() {
     }
   }
 
-  // async function fetchNurses() {
-  //   const { data, error } = await supabase.from("nurses").select("*");
-
-  //   console.log("🧪 test load nurses:", data);
-  //   setNurses(data || []);
-  // }
-
   async function fetchNurses() {
     setLoading(true);
 
-    let query = supabase.from("nurses").select("*").order("display_order");
+    let query = supabase
+      .from("nurses")
+      .select("*", { count: "exact" })
+      .order("display_order", { ascending: true });
 
     if (currentUser?.role !== "admin") {
       if (currentUser?.user_type === "หัวหน้าพยาบาล") {
@@ -120,8 +120,7 @@ export default function NurseManagerPage() {
           .eq("hospital_id", currentUser.hospital_id)
           .eq("ward_id", currentUser.ward_id);
       } else {
-        // ป้องกันการโหลดของพยาบาลทั่วไป
-        query = query.eq("id", ""); // ✴️ ไม่ตรงกับใครเลย
+        query = query.eq("id", "");
       }
     }
 
@@ -139,6 +138,24 @@ export default function NurseManagerPage() {
   }
 
   async function saveNurse() {
+    if (!formData.display_name || formData.display_name.trim() === "") {
+      toast.error("กรุณากรอก ชื่อที่แสดงในตารางเวร");
+      return;
+    }
+    if (formData.display_order === null || isNaN(formData.display_order)) {
+      toast.error("กรุณากรอก ลำดับในตารางเวร");
+      return;
+    }
+
+    if (!formData.hospital_id) {
+      toast.error("กรุณาเลือก โรงพยาบาล");
+      return;
+    }
+    if (!formData.ward_id) {
+      toast.error("กรุณาเลือก วอร์ด");
+      return;
+    }
+
     const updatedFields = {
       name: formData.name,
       first_name: formData.first_name,
@@ -148,38 +165,38 @@ export default function NurseManagerPage() {
       phone: formData.phone,
       line_id: formData.line_id,
       display_order: formData.display_order,
+      display_name: formData.display_name,
       is_active_for_shift: formData.is_active_for_shift,
       is_active_for_massage: formData.is_active_for_massage,
     };
 
-    // เฉพาะกรณีมีค่า hospital_id
     if (formData.hospital_id) {
       updatedFields.hospital_id = formData.hospital_id;
     }
-    // เฉพาะกรณีมีค่า ward_id
     if (formData.ward_id) {
       updatedFields.ward_id = formData.ward_id;
     }
 
+    let error = null;
     if (editId) {
-      console.log("Updating nurse:", formData);
-
-      const { error } = await supabase
+      const res = await supabase
         .from("nurses")
         .update(updatedFields)
         .eq("id", editId);
-      if (!error) {
-        console.error("Update error:", error);
-        setEditId(null);
-        resetForm();
-        fetchNurses();
-      }
+      error = res.error;
     } else {
-      const { error } = await supabase.from("nurses").insert([formData]);
-      if (!error) {
-        resetForm();
-        fetchNurses();
-      }
+      const res = await supabase.from("nurses").insert([updatedFields]);
+      error = res.error;
+    }
+
+    if (!error) {
+      resetForm();
+      setEditId(null);
+      setAddingNew(false);
+      fetchNurses();
+    } else {
+      console.error("Save error", error);
+      toast.error("เกิดข้อผิดพลาดในการบันทึกข้อมูลพยาบาล");
     }
   }
 
@@ -193,6 +210,7 @@ export default function NurseManagerPage() {
       phone: "",
       line_id: "",
       display_order: 0,
+      display_name: "",
       hospital_id: null,
       ward_id: null,
       is_active_for_shift: true,
@@ -237,9 +255,62 @@ export default function NurseManagerPage() {
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             className="border px-2 py-1 bg-white text-black"
           />
+          <input
+            placeholder="ชื่อที่แสดงในตารางเวร"
+            value={formData.display_name}
+            onChange={(e) =>
+              setFormData({ ...formData, display_name: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+          />
+
+          <label className="text-sm font-semibold">
+            ลำดับในตารางเวร
+            <input
+              type="number"
+              placeholder="ลำดับในตารางเวร"
+              value={formData.display_order}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  display_order: parseInt(e.target.value, 10),
+                })
+              }
+              className="border px-2 py-1 bg-white text-black w-full"
+            />
+          </label>
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.is_active_for_shift}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    is_active_for_shift: e.target.checked,
+                  })
+                }
+              />
+              <span>ใช้งานในตารางเวร</span>
+            </label>
+
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.is_active_for_massage}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    is_active_for_massage: e.target.checked,
+                  })
+                }
+              />
+              <span>ใช้งานในนัดนวด</span>
+            </label>
+          </div>
 
           <input
-            placeholder="ชื่อ"
+            placeholder="ชื่อจริง"
             value={formData.first_name}
             onChange={(e) =>
               setFormData({ ...formData, first_name: e.target.value })
@@ -293,7 +364,7 @@ export default function NurseManagerPage() {
               setFormData({ ...formData, hospital_id: e.target.value })
             }
             className="border px-2 py-1 bg-white text-black"
-            disabled={currentUser?.role !== "admin"} // ✅ ใส่ตรงนี้
+            disabled={!isAdmin} // สำหรับโรงพยาบาล
           >
             <option value="">เลือกโรงพยาบาล</option>
             {hospitals.map((h) => (
@@ -309,10 +380,7 @@ export default function NurseManagerPage() {
               setFormData({ ...formData, ward_id: e.target.value })
             }
             className="border px-2 py-1 bg-white text-black"
-            disabled={
-              currentUser?.role !== "admin" &&
-              currentUser?.user_type !== "หัวหน้าพยาบาล"
-            }
+            disabled={!isAdmin && !isHeadNurse} // สำหรับวอร์ด
           >
             <option value="">เลือกวอร์ด</option>
             {wards.map((w) => (
@@ -321,53 +389,6 @@ export default function NurseManagerPage() {
               </option>
             ))}
           </select>
-          <div className="flex items-center space-x-4">
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.is_active_for_shift}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    is_active_for_shift: e.target.checked,
-                  })
-                }
-              />
-              <span>ใช้งานในตารางเวร</span>
-            </label>
-
-            <div className="flex flex-col">
-              <label className="mb-1 text-sm font-medium whitespace-nowrap">
-                ลำดับแสดงผล
-              </label>
-              <input
-                type="number"
-                placeholder="ลำดับ"
-                value={formData.display_order}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    display_order: Number(e.target.value),
-                  })
-                }
-                className="border px-2 py-1 w-24"
-              />
-            </div>
-
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.is_active_for_massage}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    is_active_for_massage: e.target.checked,
-                  })
-                }
-              />
-              <span>ใช้งานในนัดนวด</span>
-            </label>
-          </div>
         </div>
       )}
       {!editId && !addingNew ? (
@@ -406,20 +427,24 @@ export default function NurseManagerPage() {
         <table className="w-full text-sm border">
           <thead>
             <tr className="bg-white text-black dark:bg-gray-900 dark:text-white">
-              <th className="border p-1">ชื่อเรียก - ชื่อ นามสกุล</th>
+              <th className="border p-1">
+                ชื่อเล่น (ชื่อเรียก) - ชื่อแสดงผลในตารางเวร
+              </th>
+              <th className="border p-1">ลำดับในตารางเวร</th>
               <th className="border p-1">ตำแหน่ง</th>
               <th className="border p-1">วอร์ด</th>
               <th className="border p-1">ขึ้นเวร</th>
               <th className="border p-1">นวด</th>
-              <th className="border p-1">ลบ</th>
+              <th className="border p-1">กระทำการ</th>
             </tr>
           </thead>
           <tbody>
             {filteredNurses.map((n) => (
               <tr key={n.id}>
                 <td className="border p-1 text-white">
-                  {n.name} - {n.first_name} {n.last_name}
+                  {n.name} - {n.display_name}
                 </td>
+                <td className="border p-1 text-white">{n.display_order}</td>
                 <td className="border p-1 text-white">{n.position}</td>
                 <td className="border p-1 text-white">
                   {wards.find((w) => w.id === n.ward_id)?.name || "-"}
@@ -435,6 +460,7 @@ export default function NurseManagerPage() {
                     onClick={() => {
                       setFormData({
                         name: n.name || "",
+                        display_name: n.display_name || "",
                         first_name: n.first_name || "",
                         last_name: n.last_name || "",
                         position: n.position || "",
@@ -453,12 +479,19 @@ export default function NurseManagerPage() {
                   >
                     ✏️ แก้ไข
                   </button>
+
                   <button
                     onClick={() => confirmDeleteNurse(n.id)}
                     className="text-red-600 hover:underline"
                   >
                     ลบ
                   </button>
+
+                  <Link href={`/nurse-holidays/${n.id}`}>
+                    <button className="text-yellow-500 hover:underline">
+                      📅 วันหยุด
+                    </button>
+                  </Link>
                 </td>
               </tr>
             ))}
