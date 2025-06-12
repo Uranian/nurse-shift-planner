@@ -868,7 +868,7 @@ function ShiftPlanner() {
 
         <div className="flex flex-wrap gap-2 mt-2">
           <Link href="/admin-dashboard">
-            <button className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded">
+            <button className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded">
               🛠️ แผงควบคุมระบบ
             </button>
           </Link>
@@ -1253,7 +1253,7 @@ function ShiftPlanner() {
                 showConfirmButton: false,
               });
             }}
-            className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+            className="bg-violet-500 text-white px-4 py-2 rounded hover:bg-gray-600"
           >
             📄 ตารางเวรเก่า
           </button>
