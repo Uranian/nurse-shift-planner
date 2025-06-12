@@ -1259,69 +1259,6 @@ function ShiftPlanner() {
           </button>
         )}
 
-        {(["admin"].includes(userRole) ||
-          ["หัวหน้าพยาบาล", "หัวหน้าวอร์ด"].includes(currentUser?.user_type)) &&
-          editingPlan && ( // ต้องกำลังแก้ไขแผนเวรอยู่
-            <button
-              onClick={() => {
-                if (!nurseList.length) {
-                  toast.error("⚠️ ยังไม่มีรายชื่อพยาบาลในวอร์ดนี้");
-                  return;
-                }
-
-                const newAssignments = {};
-                const shiftSummaryPerDay = [];
-
-                for (let day = 1; day <= daysInMonth; day++) {
-                  const dateStr = `${year}-${String(month).padStart(
-                    2,
-                    "0"
-                  )}-${String(day).padStart(2, "0")}`;
-                  newAssignments[dateStr] = {};
-
-                  const summary = {
-                    date: dateStr,
-                    morning: [],
-                    evening: [],
-                    night: [],
-                  };
-
-                  nurseList.forEach((nurse) => {
-                    const availableShifts = [...shifts];
-                    const randomShift =
-                      availableShifts[
-                        Math.floor(Math.random() * availableShifts.length)
-                      ];
-
-                    newAssignments[dateStr][nurse.id] = [randomShift];
-                    summary[randomShift].push(nurse.display_name || nurse.name);
-                  });
-
-                  shiftSummaryPerDay.push(summary);
-                }
-
-                setAssignments(newAssignments);
-
-                setAssignments(newAssignments);
-
-                const summary = shiftSummaryPerDay
-                  .map((s) => {
-                    return `📅 ${s.date}
-- เช้า (${s.morning.length}): ${s.morning.join(", ") || "-"}
-- บ่าย (${s.evening.length}): ${s.evening.join(", ") || "-"}
-- ดึก (${s.night.length}): ${s.night.join(", ") || "-"}
-`;
-                  })
-                  .join("\n\n");
-
-                setSummaryText(summary); // 👈 เก็บไว้แสดงด้านล่างตาราง
-                setStatusMessage("🎲 สุ่มเวรเรียบร้อยแล้ว");
-              }}
-              className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 ml-2"
-            >
-              📅 จัดเวรอัตโนมัติ (สุ่ม)
-            </button>
-          )}
         {currentUser &&
           planId &&
           Object.entries(assignments).some(([dateStr, nurseShifts]) => {
@@ -1353,7 +1290,73 @@ function ShiftPlanner() {
               🗑 ล้างข้อมูล
             </button>
           )}
+          {(["admin"].includes(userRole) ||
+            ["หัวหน้าพยาบาล", "หัวหน้าวอร์ด"].includes(
+              currentUser?.user_type
+            )) &&
+            editingPlan && ( // ต้องกำลังแก้ไขแผนเวรอยู่
+              <button
+                onClick={() => {
+                  if (!nurseList.length) {
+                    toast.error("⚠️ ยังไม่มีรายชื่อพยาบาลในวอร์ดนี้");
+                    return;
+                  }
 
+                  const newAssignments = {};
+                  const shiftSummaryPerDay = [];
+
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    const dateStr = `${year}-${String(month).padStart(
+                      2,
+                      "0"
+                    )}-${String(day).padStart(2, "0")}`;
+                    newAssignments[dateStr] = {};
+
+                    const summary = {
+                      date: dateStr,
+                      morning: [],
+                      evening: [],
+                      night: [],
+                    };
+
+                    nurseList.forEach((nurse) => {
+                      const availableShifts = [...shifts];
+                      const randomShift =
+                        availableShifts[
+                          Math.floor(Math.random() * availableShifts.length)
+                        ];
+
+                      newAssignments[dateStr][nurse.id] = [randomShift];
+                      summary[randomShift].push(
+                        nurse.display_name || nurse.name
+                      );
+                    });
+
+                    shiftSummaryPerDay.push(summary);
+                  }
+
+                  setAssignments(newAssignments);
+
+                  setAssignments(newAssignments);
+
+                  const summary = shiftSummaryPerDay
+                    .map((s) => {
+                      return `📅 ${s.date}
+- เช้า (${s.morning.length}): ${s.morning.join(", ") || "-"}
+- บ่าย (${s.evening.length}): ${s.evening.join(", ") || "-"}
+- ดึก (${s.night.length}): ${s.night.join(", ") || "-"}
+`;
+                    })
+                    .join("\n\n");
+
+                  setSummaryText(summary); // 👈 เก็บไว้แสดงด้านล่างตาราง
+                  setStatusMessage("🎲 สุ่มเวรเรียบร้อยแล้ว");
+                }}
+                className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 ml-2"
+              >
+                🤖 จัดเวรอัตโนมัติ
+              </button>
+            )}
           {canEdit && editingPlan && Object.keys(assignments).length > 0 && (
             <>
               {/* ✅ แสดงเฉพาะตอนมี planId (แปลว่าแก้แผนเดิมอยู่) */}
