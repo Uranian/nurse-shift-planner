@@ -39,6 +39,7 @@ function ShiftPlanner() {
     setAssignments({});
     setStatusMessage("🗑 ล้างข้อมูลเรียบร้อยแล้ว (ยังไม่บันทึก)");
     setShowConfirm(false);
+    setSummaryText(""); // 🧼 ล้างสรุปเวร
   };
 
   const [planId, setPlanId] = useState(null);
@@ -63,22 +64,82 @@ function ShiftPlanner() {
 
   const [currentUser, setCurrentUser] = useState(null);
 
-  const [viewingPlan, setViewingPlan] = useState(null); // ข้อมูลตารางเวรที่กำลังดู
-  const [viewingAssignments, setViewingAssignments] = useState({});
-
   const lastWarnings = useRef(new Set());
-
+  const [userShiftWardID, setUserShiftWardID] = useState("");
+  const [userHospitalID, setUserHospitalID] = useState("");
   const [showReset, setShowReset] = useState(true);
+  const [selectedHospitalId, setSelectedHospitalId] = useState(
+    userHospitalID || ""
+  );
+  const [selectedWardId, setSelectedWardId] = useState(userShiftWardID || "");
 
-  const [selectedHospitalId, setSelectedHospitalId] = useState(null);
-  const [selectedWardId, setSelectedWardId] = useState(null);
   const [allHospitals, setAllHospitals] = useState([]);
   const [allWards, setAllWards] = useState([]);
   const [userRole, setUserRole] = useState("");
 
+  const [isHospitalLocked, setIsHospitalLocked] = useState(true);
+  const [isWardLocked, setIsWardLocked] = useState(true);
+
   const [wardConfig, setWardConfig] = useState(null);
 
   const [existingPlans, setExistingPlans] = useState([]);
+
+  const [showEditShiftModal, setShowEditShiftModal] = useState(false);
+
+  const [summaryText, setSummaryText] = useState("");
+
+  const [viewingPlan, setViewingPlan] = useState(null); // ข้อมูลตารางเวรที่กำลังดู
+  const [viewingAssignments, setViewingAssignments] = useState({});
+
+  // ✅ สำหรับการแก้ไขเวร
+  const [editingShiftId, setEditingShiftId] = useState(null);
+  const [isOt, setIsOt] = useState(false);
+  const [replacementNurseId, setReplacementNurseId] = useState("");
+  const [note, setNote] = useState("");
+  const [showEditModal, setShowEditModal] = useState(false);
+
+  const [editShiftDetail, setEditShiftDetail] = useState(null);
+
+  const [cleared, setCleared] = useState(false);
+
+  // 👇 ฟังก์ชันสำหรับเวรที่มี id (โหลดจาก Supabase)
+  const openEditShiftFromDatabase = async (shiftId) => {
+    console.log("🔍 โหลดเวรจากฐานข้อมูล:", shiftId);
+    const { data, error } = await supabase
+      .from("nurse_shifts")
+      .select("is_ot, replacement_nurse_id, note")
+      .eq("id", shiftId)
+      .single();
+
+    if (error || !data) {
+      toast.error("❌ โหลดข้อมูลไม่สำเร็จ");
+      return;
+    }
+
+    setEditingShiftId(shiftId);
+    setIsOt(data.is_ot || false);
+    setReplacementNurseId(data.replacement_nurse_id || "");
+    setNote(data.note || "");
+    setShowEditModal(true);
+  };
+
+  // 👇 ฟังก์ชันสำหรับเวรลอยจาก assignments (ยังไม่มี id)
+  const openEditShiftFromAssignments = ({ nurseId, date, shiftType }) => {
+    const shiftArray = assignments[date]?.[nurseId] || [];
+    const shift = shiftArray.find((s) => s.type === shiftType);
+
+    if (!shift) {
+      toast.error("❌ ไม่พบข้อมูลเวรนี้ใน assignments");
+      return;
+    }
+
+    setEditingShiftId(null); // ไม่มี id เพราะยังไม่ถูกบันทึก
+    setIsOt(shift.is_ot || false);
+    setReplacementNurseId(shift.replacement_nurse_id || "");
+    setNote(shift.note || "");
+    setEditShiftDetail({ nurseId, date, shiftType });
+    setShowEditModal(true);
+  };
 
   const canEdit =
     userRole === "admin" ||
@@ -106,58 +167,8 @@ function ShiftPlanner() {
 
     setViewingAssignments(result);
     setViewingPlan({ id: planId, name });
+    setSummaryText(""); // 🧼 ล้างสรุปเวร
   };
-
-  const loadPlanForEdit = async (planId, name) => {
-    const { data, error } = await supabase
-      .from("nurse_shifts")
-      .select("*")
-      .eq("plan_id", planId);
-
-    if (error || !data) {
-      toast.error("❌ โหลดข้อมูลไม่สำเร็จ");
-      return;
-    }
-
-    const loaded = {};
-    data.forEach((row) => {
-      const date = row.shift_date;
-      if (!loaded[date]) loaded[date] = {};
-      if (!loaded[date][row.nurse_id]) loaded[date][row.nurse_id] = [];
-      loaded[date][row.nurse_id].push(row.shift_type);
-    });
-
-    setAssignments(loaded);
-    setPlanId(planId);
-    setShiftPlanName(name);
-    setEditingPlan(true);
-    setStatusMessage("🛠 กำลังแก้ไขแผนเวรเดิม");
-  };
-
-  const copyFromPlanId = async (planId) => {
-    const { data, error } = await supabase
-      .from("nurse_shifts")
-      .select("*")
-
-      .eq("plan_id", planId);
-
-    if (error || !data || data.length === 0) {
-      toast.error("⚠️ ไม่พบข้อมูลในแผนเวรนี้");
-      return;
-    }
-
-    const copied = {};
-    data.forEach((row) => {
-      const date = row.shift_date;
-      if (!copied[date]) copied[date] = {};
-      if (!copied[date][row.nurse_id]) copied[date][row.nurse_id] = [];
-      copied[date][row.nurse_id].push(row.shift_type);
-    });
-
-    setAssignments(copied);
-    setStatusMessage("🔁 คัดลอกจากแผนเวรสำเร็จ (ยังไม่บันทึก)");
-  };
-
   const saveToExistingPlan = async () => {
     if (!planId || !hospitalId || !wardId) {
       toast.error("❌ ไม่มี plan_id หรือ hospital/ward");
@@ -165,6 +176,12 @@ function ShiftPlanner() {
     }
 
     try {
+      // ✅ เพิ่มส่วนนี้เพื่อสร้าง nurseDisplayOrder
+      const nurseDisplayOrder = nurseList.reduce((acc, nurse, index) => {
+        acc[nurse.id] = index;
+        return acc;
+      }, {});
+
       const rows = [];
 
       for (const nurse of nurseList) {
@@ -186,7 +203,7 @@ function ShiftPlanner() {
           // บันทึกเวรตามปกติ
           for (const s of shiftsForNurse) {
             rows.push({
-              plan_id: newPlanId,
+              plan_id: planId, // 🔧 เปลี่ยนจาก newPlanId เป็น planId (ใช้ของเดิม)
               nurse_id: nurseId,
               shift_date: s.date,
               shift_type: s.shift,
@@ -196,9 +213,9 @@ function ShiftPlanner() {
             });
           }
         } else {
-          // ไม่มีเวรเลย → บันทึก placeholder (shift_date/shift_type = null)
+          // ไม่มีเวรเลย → บันทึก placeholder
           rows.push({
-            plan_id: newPlanId,
+            plan_id: planId,
             nurse_id: nurseId,
             shift_date: null,
             shift_type: null,
@@ -232,9 +249,42 @@ function ShiftPlanner() {
       console.log("👤 username:", user.username);
 
       setCurrentUser(user);
-      setUserRole(user.role || ""); // ← เปลี่ยนตรงนี้ด้วย
+      setUserRole(user.role || "");
+      setUserShiftWardID(user.shift_ward_id || user.ward_id || ""); // ✅ ใช้ fallback
+      setUserHospitalID(user.hospital_id || "");
+
+      // 🔒 ตั้งค่า lock โดยตรง
+      setIsHospitalLocked(user.role !== "admin");
+      setIsWardLocked(
+        user.role !== "admin" && user.user_type !== "หัวหน้าพยาบาล"
+      );
+
+      // 🟡 ตั้ง selected hospital/ward ทันที
+      setSelectedHospitalId(user.hospital_id || "");
+      setSelectedWardId(user.shift_ward_id || "");
     }
   }, []);
+
+  useEffect(() => {
+    // ถ้า selectedWardId ยังว่าง และมี ward id ที่ควรเลือก
+
+    // 🔍 ตรวจสอบประเภทข้อมูล
+    console.log("✅ typeof userShiftWardID:", typeof userShiftWardID);
+    console.log(
+      "✅ allWards id types:",
+      allWards.map((w) => typeof w.id)
+    );
+    console.log("✅ allWards:", allWards);
+    // ✅ wait for allWards to load before setting selected ward
+    if (
+      allWards.length > 0 &&
+      userShiftWardID &&
+      !selectedWardId &&
+      allWards.some((w) => String(w.id) === String(userShiftWardID))
+    ) {
+      setSelectedWardId(userShiftWardID);
+    }
+  }, [allWards, selectedWardId, userShiftWardID]);
 
   // 🌐 โหลด context จาก localStorage
   useEffect(() => {
@@ -351,113 +401,6 @@ function ShiftPlanner() {
         // อัปเดต UI โดยการลบแผนออกจาก state
         setPlanList((prev) => prev.filter((plan) => plan.id !== planId));
       }
-    }
-  };
-
-  // 🚀 แก้ไขชื่อแผน
-  const editPlanName = async (planId, oldName) => {
-    const { value: newName } = await Swal.fire({
-      title: "✏️ แก้ไขชื่อตารางเวร",
-      input: "text",
-      inputLabel: "ชื่อใหม่ของแผน",
-      inputValue: oldName,
-      inputPlaceholder: "ระบุชื่อแผนใหม่",
-      showCancelButton: true,
-      confirmButtonText: "💾 บันทึก",
-      cancelButtonText: "ยกเลิก",
-      inputValidator: (value) => {
-        if (!value || value.trim() === "") {
-          return "กรุณาระบุชื่อใหม่";
-        }
-      },
-    });
-
-    if (!newName) return;
-
-    const { error } = await supabase
-      .from("shift_plans")
-      .update({ name: newName.trim() })
-      .eq("id", planId);
-
-    if (error) {
-      toast.error("❌ แก้ไขชื่อแผนไม่สำเร็จ");
-    } else {
-      toast.success("✏️ แก้ไขชื่อแผนเรียบร้อย");
-      // อัปเดต UI โดยการแก้ชื่อแผนใน state
-      setPlanList((prev) =>
-        prev.map((plan) =>
-          plan.id === planId ? { ...plan, name: newName.trim() } : plan
-        )
-      );
-    }
-  };
-
-  // 🚀 คัดลอกแผน
-  const copyPlan = async (planId) => {
-    const { data: planData, error } = await supabase
-      .from("shift_plans")
-      .select("*")
-      .eq("id", planId)
-      .single();
-
-    if (error || !planData) {
-      toast.error("❌ คัดลอกแผนไม่สำเร็จ");
-      return;
-    }
-
-    const { name, hospital_id, ward_id, year, month } = planData;
-
-    const { data: newPlan, error: insertError } = await supabase
-      .from("shift_plans")
-      .insert([
-        {
-          name: `${name} - คัดลอก`,
-          hospital_id,
-          ward_id,
-          year,
-          month,
-        },
-      ])
-      .select()
-      .single();
-
-    if (insertError) {
-      toast.error("❌ คัดลอกแผนไม่สำเร็จ");
-    } else {
-      toast.success("✅ คัดลอกแผนเรียบร้อย");
-      // เพิ่มแผนใหม่ใน state
-      setPlanList((prev) => [newPlan, ...prev]);
-    }
-  };
-
-  // 🚀 บันทึกแผนใหม่
-  const saveNewPlan = async () => {
-    if (!shiftPlanName) {
-      toast.error("⚠️ กรุณาระบุชื่อแผน");
-      return;
-    }
-
-    const { data: newPlan, error } = await supabase
-      .from("shift_plans")
-      .insert([
-        {
-          name: shiftPlanName,
-          hospital_id: 1, // สมมติว่าใช้ ID ของโรงพยาบาลจาก context หรือที่เลือก
-          ward_id: 1, // สมมติว่าใช้ ID ของวอร์ดจาก context หรือที่เลือก
-          year: new Date().getFullYear(),
-          month: new Date().getMonth() + 1,
-        },
-      ])
-      .select()
-      .single();
-
-    if (error) {
-      toast.error("❌ บันทึกแผนใหม่ไม่สำเร็จ");
-    } else {
-      toast.success("✅ บันทึกแผนใหม่เรียบร้อย");
-      // เพิ่มแผนใหม่ใน state
-      setPlanList((prev) => [newPlan, ...prev]);
-      setShiftPlanName(""); // รีเซ็ตชื่อแผนหลังบันทึก
     }
   };
 
@@ -692,7 +635,6 @@ function ShiftPlanner() {
     }
   };
 
-  // ✅ ส่วนการบันทึกแผนเวรใหม่ (ฟังก์ชัน saveToSupabase)
   const saveToSupabase = async (optionalPlanName) => {
     if (!hospitalId || !wardId) {
       toast.error("⚠️ ไม่มี hospital_id หรือ ward_id ในบริบทผู้ใช้");
@@ -734,20 +676,26 @@ function ShiftPlanner() {
       });
 
       const rows = [];
+      const seen = new Set();
 
       for (const [date, nurses] of Object.entries(assignments)) {
         for (const [nurseId, shiftList] of Object.entries(nurses)) {
           if (Array.isArray(shiftList)) {
-            for (const shift of shiftList) {
-              rows.push({
-                plan_id: newPlanId,
-                nurse_id: nurseId,
-                shift_date: date,
-                shift_type: shift,
-                display_order: nurseDisplayOrder[nurseId] || 0,
-                hospital_id: hospitalId,
-                ward_id: wardId,
-              });
+            const uniqueShifts = [...new Set(shiftList)];
+            for (const shift of uniqueShifts) {
+              const key = `${newPlanId}-${nurseId}-${date}-${shift}`;
+              if (!seen.has(key)) {
+                seen.add(key);
+                rows.push({
+                  plan_id: newPlanId,
+                  nurse_id: nurseId,
+                  shift_date: date,
+                  shift_type: shift,
+                  display_order: nurseDisplayOrder[nurseId] || 0,
+                  hospital_id: hospitalId,
+                  ward_id: wardId,
+                });
+              }
             }
           }
         }
@@ -756,11 +704,14 @@ function ShiftPlanner() {
       const { error } = await supabase.from("nurse_shifts").insert(rows);
       if (error) {
         toast.error("❌ เกิดข้อผิดพลาด: " + error.message);
+        return { error }; // ✅ เพิ่ม return
       } else {
         toast.success("✅ บันทึกข้อมูลสำเร็จ");
+        return { success: true }; // ✅ เพิ่ม return
       }
     } catch (e) {
       toast.error("⚠️ บันทึกล้มเหลว: " + e.message);
+      return { error: e }; // ✅ เพิ่มบรรทัดนี้
     }
   };
 
@@ -775,22 +726,32 @@ function ShiftPlanner() {
     fetchHospitalsAndWards();
   }, []);
 
-  const fetchNurseList = async () => {
-    if (!hospitalId || !wardId) return;
+  const fetchNurseList = async (hId = hospitalId, wId = wardId) => {
+    if (!hId || !wId) return;
 
+    // 🛠 debug เพิ่มเติม
+    console.log("🔍 Fetching nurses for hospital_id:", hId, "ward_id:", wId);
     const { data: nurses, error: nurseError } = await supabase
       .from("nurses")
       .select("id, display_name, display_order")
-      .eq("hospital_id", hospitalId)
-      .eq("ward_id", wardId)
+      .eq("hospital_id", hId)
+      .eq("ward_id", wId)
       .eq("is_active_for_shift", true)
       .order("display_order", { ascending: true });
 
     if (nurseError) {
       console.error("Fetch nurses error:", nurseError);
       toast.error("ไม่สามารถโหลดรายชื่อพยาบาลได้");
-      return;
+      return false;
     }
+
+    console.log("✅ Loaded nurses:", nurses);
+
+    const map = {};
+    nurses.forEach((n) => {
+      map[n.id] = n.display_name;
+    });
+    setNurseMap(map);
 
     const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
     const daysInMonth = dayjs(startDate).daysInMonth();
@@ -843,7 +804,6 @@ function ShiftPlanner() {
       }
     }
 
-    // fallback สำหรับ null display_order
     const sortedNurses = [...nurses].sort((a, b) => {
       const aOrder = a.display_order ?? 9999;
       const bOrder = b.display_order ?? 9999;
@@ -852,7 +812,8 @@ function ShiftPlanner() {
 
     setNurseList(sortedNurses);
     setAssignments(assignmentsInit);
-    setStatusMessage(`📋 จัดเวรใหม่: ${sortedNurses.length} คน`);
+    setStatusMessage(`🆕 จัดเวรใหม่: ${sortedNurses.length} คน`);
+    return true;
   };
 
   const loadPlanById = async (planId) => {
@@ -882,81 +843,18 @@ function ShiftPlanner() {
     setPlanId(planId);
   };
 
+  const getHospitalName = (id) => {
+    const h = allHospitals.find((h) => h.id === id);
+    return h ? h.name : "(ไม่พบชื่อโรงพยาบาล)";
+  };
+
+  const getWardName = (id) => {
+    const w = allWards.find((w) => w.id === id);
+    return w ? w.name : "(ไม่พบชื่อวอร์ด)";
+  };
+
   return (
     <div className="overflow-auto p-4">
-      {viewingPlan && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-          <div className="bg-white p-4 rounded max-h-[80vh] overflow-y-auto w-full max-w-4xl">
-            <h2 className="text-lg font-bold mb-4 text-center text-black">
-              👁 ตารางเวร: {viewingPlan.name}
-            </h2>
-            <table className="table-auto border-collapse text-sm mx-auto mb-4">
-              <thead>
-                <tr>
-                  <th className="border px-2 py-1 bg-gray-200 text-black sticky left-0 z-10">
-                    👩‍⚕️ พยาบาล
-                  </th>
-                  {Array.from({ length: 31 }, (_, i) => (
-                    <th
-                      key={i + 1}
-                      className="border px-2 py-1 bg-gray-100 text-black"
-                    >
-                      {i + 1}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {nurseList.map((nurse, rowIndex) => (
-                  <tr key={rowIndex}>
-                    <td className="border px-2 py-1 sticky left-0 bg-white text-black z-10">
-                      {nurseMap[nurse.id] || `${nurse.name}`}
-                    </td>
-                    {Array.from({ length: 31 }, (_, dayIndex) => {
-                      const day = dayIndex + 1;
-                      const dateKey = `${year}-${month
-                        .toString()
-                        .padStart(2, "0")}-${day.toString().padStart(2, "0")}`;
-                      const assigned =
-                        viewingAssignments[dateKey]?.[nurse] || [];
-                      return (
-                        <td
-                          key={dayIndex}
-                          className="border px-1 py-1 text-center bg-white"
-                        >
-                          {assigned.map((s) => (
-                            <div
-                              key={s}
-                              className={`text-xs rounded px-1 mb-0.5 text-black ${
-                                s === "morning"
-                                  ? "bg-blue-300"
-                                  : s === "evening"
-                                  ? "bg-orange-300"
-                                  : "bg-purple-300"
-                              }`}
-                            >
-                              {shiftLabels[s]}
-                            </div>
-                          ))}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="text-center">
-              <button
-                onClick={() => setViewingPlan(null)}
-                className="bg-gray-500 text-white px-4 py-2 rounded"
-              >
-                ❌ ปิดหน้าต่าง
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* หัวเรื่อง + ปุ่มลิงก์ admin */}
       <div className="flex flex-wrap items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">📅 จัดตารางเวรพยาบาล</h1>
@@ -1057,16 +955,16 @@ function ShiftPlanner() {
             </option>
           ))}
         </select>
-        {/* 🔽 เงื่อนไขการเลือกโรงพยาบาลและวอร์ด */}
+
         <>
-          {/* 🔹 admin: แสดงทุกโรงพยาบาล */}
           {userRole === "admin" ? (
             <select
               className="border p-2"
-              value={selectedHospitalId || ""}
+              value={selectedHospitalId}
               onChange={(e) => {
+                console.log("🏥 Hospital selected:", e.target.value); // ✅ log
                 setSelectedHospitalId(e.target.value);
-                setSelectedWardId("");
+                setSelectedWardId(""); // reset วอร์ดเมื่อเปลี่ยนโรงพยาบาล
               }}
             >
               <option value="">เลือกโรงพยาบาล</option>
@@ -1077,27 +975,27 @@ function ShiftPlanner() {
               ))}
             </select>
           ) : (
-            // 🔹 หัวหน้าพยาบาล: แสดงโรงพยาบาลเดียวที่ล็อกไว้
             <select className="border p-2" disabled>
-              <option value={hospitalId}>{hospitalName}</option>
+              <option value={userHospitalID}>{hospitalName}</option>
             </select>
           )}
-
-          {/* 🔸 วอร์ด */}
           {userRole === "admin" ||
           currentUser?.user_type === "หัวหน้าพยาบาล" ? (
             <select
               className="border p-2"
-              value={selectedWardId || ""}
-              onChange={(e) => setSelectedWardId(e.target.value)}
+              value={selectedWardId}
+              onChange={(e) => {
+                console.log("🏥 Ward selected:", e.target.value); // ✅ log
+                setSelectedWardId(e.target.value);
+              }}
               disabled={
-                userRole === "admin" ? !selectedHospitalId : !hospitalId
+                userRole === "admin" ? !selectedHospitalId : !userHospitalID
               }
             >
               <option value="">เลือกวอร์ด</option>
               {(userRole === "admin"
                 ? allWards.filter((w) => w.hospital_id === selectedHospitalId)
-                : allWards.filter((w) => w.hospital_id === hospitalId)
+                : allWards.filter((w) => w.hospital_id === userHospitalID)
               ).map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
@@ -1105,42 +1003,65 @@ function ShiftPlanner() {
               ))}
             </select>
           ) : (
-            // 🔸 ไม่ใช่หัวหน้าพยาบาล: ล็อกวอร์ดเดียว
             <select className="border p-2" disabled>
-              <option value={wardId}>{wardName}</option>
+              <option value={userShiftWardID}>{wardName}</option>
             </select>
           )}
         </>
+        <button
+          onClick={() => {
+            setCleared(true);
+            setEditingPlan(false);
+            setAssignments({});
+            setPlanId(null);
+            setShiftPlanName("");
+            // toast.info("🧹 ซ่อนตารางเวรและปุ่มทั้งหมดชั่วคราว");
+          }}
+          className="px-4 py-2 bg-gray-500 text-white rounded mr-2"
+        >
+          🧹 เคลียร์
+        </button>
 
-        {/* 🔄 ปุ่มจัดเวรใหม่ - เฉพาะ role/admin หรือ user_type หัวหน้า ที่เลือก ward แล้ว */}
+        {/* 🆕 ปุ่มจัดเวรใหม่ - เฉพาะ role/admin หรือ user_type หัวหน้า ที่เลือก ward แล้ว */}
         {(["admin"].includes(userRole) ||
-          ["หัวหน้าพยาบาล", "หัวหน้าวอร์ด"].includes(currentUser?.user_type)) &&
-          ((userRole === "admin" && selectedWardId) ||
-            (userRole !== "admin" &&
-              hospitalId &&
-              (selectedWardId || wardId))) && (
+          ["หัวหน้าพยาบาล", "หัวหน้าวอร์ด"].includes(
+            currentUser?.user_type
+          )) && (
+          <>
             <button
               onClick={() => {
-                setHospitalId(
-                  userRole === "admin" ? selectedHospitalId : hospitalId
-                );
-                setWardId(
-                  userRole === "admin" ||
-                    currentUser?.user_type === "หัวหน้าพยาบาล"
-                    ? selectedWardId
-                    : wardId
-                );
-                setEditingPlan(false); // 🧠 สำคัญ
-                setShiftPlanName(""); // 🧠 สำคัญ
-                setAssignments({}); // 🧠 สำคัญ
-                setPlanId(null); // 🧠 สำคัญ
-                fetchNurseList();
+                const isAdmin = userRole === "admin";
+                const isHeadNurse = currentUser?.user_type === "หัวหน้าพยาบาล";
+
+                const hId = isAdmin ? selectedHospitalId : hospitalId;
+                const wId = isAdmin || isHeadNurse ? selectedWardId : wardId;
+
+                if (!hId || !wId) {
+                  toast.error("⚠️ กรุณาเลือกโรงพยาบาลและวอร์ดก่อนจัดเวรใหม่");
+                  return;
+                }
+
+                // ตั้งค่าโรงพยาบาลและวอร์ดปัจจุบัน
+                setHospitalId(hId);
+                setWardId(wId);
+
+                // เคลียร์สถานะการจัดเวรเพื่อเริ่มใหม่
+                setEditingPlan(true); // ✅ ให้สามารถใช้ฟีเจอร์สุ่มเวรได้
+                setCleared(false); // ✅ แสดงส่วนที่ถูกซ่อนไว้
+                setShiftPlanName("");
+                setSummaryText(""); // 🧼 ล้างสรุปเวรเก่า
+                setAssignments({});
+                setPlanId(null);
+
+                // โหลดพยาบาลใหม่ตาม ward ที่เลือก
+                fetchNurseList(hId, wId);
               }}
               className="bg-yellow-600 text-white px-4 py-2 rounded hover:bg-yellow-700"
             >
-              🔄 จัดเวรใหม่
+              🆕 จัดเวรใหม่
             </button>
-          )}
+          </>
+        )}
 
         {existingPlans.length > 0 && (
           <button
@@ -1155,6 +1076,18 @@ function ShiftPlanner() {
                 const title = document.createElement("b");
                 title.innerText = `📌 ${plan.name}`;
                 container.appendChild(title);
+
+                const yearBE = plan.year + 543;
+                const month = plan.month;
+                const hospitalName = getHospitalName(plan.hospital_id);
+                const wardName = getWardName(plan.ward_id);
+
+                const meta = document.createElement("div");
+                meta.innerText = `พ.ศ. ${yearBE} เดือน ${month}, รพ. ${hospitalName}, วอร์ด ${wardName}`;
+                meta.style.color = "#888";
+                meta.style.fontSize = "0.9em";
+
+                container.appendChild(meta);
                 container.appendChild(document.createElement("br"));
 
                 const actions = canEdit
@@ -1172,78 +1105,144 @@ function ShiftPlanner() {
                       },
                     ];
 
+                const buttonRow = document.createElement("div");
+                buttonRow.style.display = "flex";
+                buttonRow.style.flexWrap = "wrap";
+                buttonRow.style.gap = "6px";
+                buttonRow.style.marginTop = "4px";
+
                 actions.forEach(({ label, action }) => {
                   const btn = document.createElement("button");
                   btn.textContent = label;
 
-                  // ✅ ใส่ className ตรงนี้ เพื่อปรับสไตล์แบบที่เราต้องการ
-                  btn.className = `text-left px-4 py-2 border-b border-gray-200 text-gray-800 hover:text-green-600 ${
-                    action.highlighted
-                      ? "inline-block font-semibold text-green-600"
-                      : "block w-full"
-                  }`;
-
-                  btn.style.marginRight = "4px";
+                  btn.className = `px-3 py-1 border border-gray-300 rounded text-sm text-gray-800 hover:text-green-600 bg-white`;
 
                   btn.onclick = async () => {
-                    if (action === "edit") {
-                      await fetchNurseList(); // โหลดรายชื่อพยาบาลก่อน
-                      await loadPlanById(plan.id);
-                      setEditingPlan(true);
-                      setShiftPlanName(plan.name);
-                      Swal.close();
-                    } else if (action === "copy") {
-                      await fetchNurseList(); // โหลดรายชื่อพยาบาลก่อน
-                      await loadPlanById(plan.id);
-                      setEditingPlan(false);
-                      setShiftPlanName(`${plan.name} (คัดลอก)`);
-                      Swal.close();
-                    } else if (action === "rename") {
-                      const { value: newName } = await Swal.fire({
-                        title: "📝 เปลี่ยนชื่อแผนเวร",
-                        input: "text",
-                        inputValue: plan.name,
-                        showCancelButton: true,
-                      });
-                      if (newName) {
-                        await supabase
-                          .from("shift_plans")
-                          .update({ name: newName })
-                          .eq("id", plan.id);
-                        toast.success("✅ เปลี่ยนชื่อแล้ว");
-                        setExistingPlans((prev) =>
-                          prev.map((p) =>
-                            p.id === plan.id ? { ...p, name: newName } : p
-                          )
-                        );
-                        Swal.close();
-                      }
-                    } else if (action === "delete") {
-                      const confirm = await Swal.fire({
-                        title: "🗑 ลบแผนเวร?",
-                        text: `ต้องการลบ "${plan.name}" หรือไม่?`,
-                        showCancelButton: true,
-                        confirmButtonText: "ลบ",
-                      });
-                      if (confirm.isConfirmed) {
-                        await supabase
-                          .from("shift_plans")
-                          .delete()
-                          .eq("id", plan.id);
-                        await supabase
-                          .from("nurse_shifts")
-                          .delete()
-                          .eq("plan_id", plan.id);
-                        toast.success("✅ ลบแผนเวรแล้ว");
-                        setExistingPlans((prev) =>
-                          prev.filter((p) => p.id !== plan.id)
-                        );
-                        Swal.close();
-                      }
+                    console.log("📋 plan.hospital_id:", plan.hospital_id);
+                    console.log("📋 plan.ward_id:", plan.ward_id);
+
+                    const hId = plan.hospital_id;
+                    const wId = plan.ward_id;
+                    const y = plan.year;
+                    const m = plan.month;
+
+                    if (!hId || !wId) {
+                      toast.error("❗️แผนเวรนี้ไม่มี hospital_id หรือ ward_id");
+                      return;
                     }
+
+                    const hospital = allHospitals.find((h) => h.id === hId);
+                    const ward = allWards.find((w) => w.id === wId);
+                    const hospitalName = hospital
+                      ? hospital.name
+                      : "(ไม่พบชื่อโรงพยาบาล)";
+                    const wardName = ward ? ward.name : "(ไม่พบชื่อวอร์ด)";
+
+                    const notMatch =
+                      selectedHospitalId !== hId ||
+                      selectedWardId !== wId ||
+                      year !== y ||
+                      month !== m;
+
+                    // ตรวจสอบว่า selected บนหน้าจอตรงกับของแผนหรือไม่
+                    if (notMatch) {
+                      await Swal.fire({
+                        icon: "warning",
+                        title: "⚠️ ข้อมูลบนหน้าจอไม่ตรงกับแผน",
+                        html: `
+        <p>กรุณาเลือก <strong>ปี</strong>, <strong>เดือน</strong>, <strong>โรงพยาบาล</strong> และ <strong>วอร์ด</strong> ให้ตรงกับแผนเวรเดิมก่อนทำรายการ</p>
+        <p><strong>แผนนี้อยู่ที่:</strong></p>
+        <ul style="text-align: left;">
+          <li>📅 ปี: ${y} เดือน: ${m}</li>
+          <li>🏥 โรงพยาบาล: ${hospitalName}</li>
+          <li>🛏️ วอร์ด: ${wardName}</li>
+        </ul>
+      `,
+                      });
+                      return;
+                    }
+
+                    // ✅ ตั้งค่าปี เดือน ก่อน
+                    setYear(y);
+                    setMonth(m);
+
+                    // ✅ ตั้งค่าวอร์ด โรงพยาบาล ก่อนโหลด
+                    setHospitalId(hId);
+                    setWardId(wId);
+                    setSelectedHospitalId(hId);
+                    setSelectedWardId(wId);
+
+                    console.log("✅ setSelectedHospitalId/wardId:", hId, wId);
+
+                    // ✅ รอ React อัปเดต state เสร็จก่อน แล้วค่อย fetch
+                    setTimeout(async () => {
+                      const success = await fetchNurseList(hId, wId);
+                      if (!success) return;
+
+                      if (action === "edit") {
+                        await loadPlanById(plan.id);
+                        setCleared(false); // ✅ แสดงส่วนที่ถูกซ่อนไว้
+                        setEditingPlan(true);
+                        setShiftPlanName(plan.name);
+                        setSummaryText(""); // 🧼 ล้างสรุปเวร
+                        Swal.close();
+                      } else if (action === "copy") {
+                        await loadPlanById(plan.id);
+                        setCleared(false); // ✅ แสดงส่วนที่ถูกซ่อนไว้
+                        setEditingPlan(false);
+                        setShiftPlanName(`${plan.name} (คัดลอก)`);
+                        setSummaryText(""); // 🧼 ล้างสรุปเวร
+                        Swal.close();
+                      } else if (action === "rename") {
+                        const { value: newName } = await Swal.fire({
+                          title: "📝 เปลี่ยนชื่อแผนเวร",
+                          input: "text",
+                          inputValue: plan.name,
+                          showCancelButton: true,
+                        });
+                        if (newName) {
+                          await supabase
+                            .from("shift_plans")
+                            .update({ name: newName })
+                            .eq("id", plan.id);
+                          toast.success("✅ เปลี่ยนชื่อแล้ว");
+                          setExistingPlans((prev) =>
+                            prev.map((p) =>
+                              p.id === plan.id ? { ...p, name: newName } : p
+                            )
+                          );
+                          Swal.close();
+                        }
+                      } else if (action === "delete") {
+                        const confirm = await Swal.fire({
+                          title: "🗑 ลบแผนเวร?",
+                          text: `ต้องการลบ "${plan.name}" หรือไม่?`,
+                          showCancelButton: true,
+                          confirmButtonText: "ลบ",
+                        });
+                        if (confirm.isConfirmed) {
+                          await supabase
+                            .from("shift_plans")
+                            .delete()
+                            .eq("id", plan.id);
+                          await supabase
+                            .from("nurse_shifts")
+                            .delete()
+                            .eq("plan_id", plan.id);
+                          toast.success("✅ ลบแผนเวรแล้ว");
+                          setExistingPlans((prev) =>
+                            prev.filter((p) => p.id !== plan.id)
+                          );
+                          Swal.close();
+                        }
+                      }
+                    }, 100); // ✅ หน่วง 100ms เพื่อรอให้ React อัปเดต state เสร็จก่อน
                   };
-                  container.appendChild(btn);
+
+                  buttonRow.appendChild(btn);
                 });
+
+                container.appendChild(buttonRow); // เพิ่มปุ่มแนวนอนทั้งหมดลง container
 
                 wrapper.appendChild(container);
               });
@@ -1259,97 +1258,144 @@ function ShiftPlanner() {
             📄 ตารางเวรเก่า
           </button>
         )}
+
+        {(["admin"].includes(userRole) ||
+          ["หัวหน้าพยาบาล", "หัวหน้าวอร์ด"].includes(currentUser?.user_type)) &&
+          editingPlan && ( // ต้องกำลังแก้ไขแผนเวรอยู่
+            <button
+              onClick={() => {
+                if (!nurseList.length) {
+                  toast.error("⚠️ ยังไม่มีรายชื่อพยาบาลในวอร์ดนี้");
+                  return;
+                }
+
+                const newAssignments = {};
+                const shiftSummaryPerDay = [];
+
+                for (let day = 1; day <= daysInMonth; day++) {
+                  const dateStr = `${year}-${String(month).padStart(
+                    2,
+                    "0"
+                  )}-${String(day).padStart(2, "0")}`;
+                  newAssignments[dateStr] = {};
+
+                  const summary = {
+                    date: dateStr,
+                    morning: [],
+                    evening: [],
+                    night: [],
+                  };
+
+                  nurseList.forEach((nurse) => {
+                    const availableShifts = [...shifts];
+                    const randomShift =
+                      availableShifts[
+                        Math.floor(Math.random() * availableShifts.length)
+                      ];
+
+                    newAssignments[dateStr][nurse.id] = [randomShift];
+                    summary[randomShift].push(nurse.display_name || nurse.name);
+                  });
+
+                  shiftSummaryPerDay.push(summary);
+                }
+
+                setAssignments(newAssignments);
+
+                setAssignments(newAssignments);
+
+                const summary = shiftSummaryPerDay
+                  .map((s) => {
+                    return `📅 ${s.date}
+- เช้า (${s.morning.length}): ${s.morning.join(", ") || "-"}
+- บ่าย (${s.evening.length}): ${s.evening.join(", ") || "-"}
+- ดึก (${s.night.length}): ${s.night.join(", ") || "-"}
+`;
+                  })
+                  .join("\n\n");
+
+                setSummaryText(summary); // 👈 เก็บไว้แสดงด้านล่างตาราง
+                setStatusMessage("🎲 สุ่มเวรเรียบร้อยแล้ว");
+              }}
+              className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 ml-2"
+            >
+              📅 จัดเวรอัตโนมัติ (สุ่ม)
+            </button>
+          )}
+        {currentUser &&
+          planId &&
+          Object.entries(assignments).some(([dateStr, nurseShifts]) => {
+            const date = dayjs(dateStr);
+            const yearMatch = date.year() === year;
+            const monthMatch = date.month() + 1 === month;
+            const hasAssignments = Object.keys(nurseShifts).length > 0;
+            return yearMatch && monthMatch && hasAssignments;
+          }) &&
+          hospitalId === DEFAULT_HOSPITAL_ID &&
+          wardId === DEFAULT_WARD_ID && ( // ✅ เพิ่มเงื่อนไขตรวจสอบ รพ./วอร์ด
+            <button
+              onClick={() => setShowEditShiftModal(true)}
+              className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700"
+            >
+              🛠 แก้ไขเวร
+            </button>
+          )}
       </div>
 
       {/* 📝 ปุ่มเพิ่มเติมจะแสดงเมื่อมี nurseList แล้ว */}
-      {nurseList.length > 0 && (
+      {!cleared && nurseList.length > 0 && (
         <div className="mb-4 flex gap-4 flex-wrap items-center">
           {canEdit && nurseList.length > 0 && (
             <button
               onClick={() => setShowConfirm(true)}
               className="bg-violet-600 text-white px-4 py-2 rounded hover:bg-violet-700"
             >
-              🗑 ล้างหน้าจอ
+              🗑 ล้างข้อมูล
             </button>
           )}
 
-          {canEdit &&
-            (editingPlan ? (
-              <>
+          {canEdit && editingPlan && Object.keys(assignments).length > 0 && (
+            <>
+              {/* ✅ แสดงเฉพาะตอนมี planId (แปลว่าแก้แผนเดิมอยู่) */}
+              {planId && (
                 <button
                   onClick={saveToExistingPlan}
                   className="px-4 py-2 bg-green-700 text-white rounded"
                 >
                   💾 บันทึกทับตารางเวรเดิม
                 </button>
-                <button
-                  onClick={async () => {
-                    const { value: newName } = await Swal.fire({
-                      title: "📄 ตั้งชื่อแผนเวรใหม่",
-                      input: "text",
-                      inputValue: shiftPlanName,
-                      inputPlaceholder: "เช่น เวรเดือนกรกฎาคม",
-                      showCancelButton: true,
-                      confirmButtonText: "💾 บันทึก",
-                      inputValidator: (value) =>
-                        !value.trim() && "กรุณาระบุชื่อ",
-                    });
-                    if (!newName) return;
+              )}
 
-                    // ตรวจสอบชื่อซ้ำก่อน
-                    const { data: existing } = await supabase
-                      .from("shift_plans")
-                      .select("id")
-                      .eq("hospital_id", hospitalId)
-                      .eq("ward_id", wardId)
-                      .eq("name", newName.trim())
-                      .eq("year", year)
-                      .eq("month", month);
-
-                    if (existing && existing.length > 0) {
-                      Swal.fire(
-                        "⚠️ ชื่อซ้ำ",
-                        "มีแผนเวรชื่อนี้อยู่แล้ว",
-                        "warning"
-                      );
-                      return;
-                    }
-
-                    setShiftPlanName(newName); // อัปเดตชื่อใหม่
-                    setEditingPlan(false); // เปลี่ยนเป็นแผนใหม่
-                    toast.info("📄 กำลังบันทึกเป็นตารางเวรใหม่");
-                    await saveToSupabase(newName); // บันทึก
-                    await fetchExistingPlans(); // โหลดใหม่
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded"
-                >
-                  🆕 บันทึกเป็นตารางเวรใหม่
-                </button>
-              </>
-            ) : (
+              {/* ✅ ปุ่มนี้ใช้สำหรับจัดเวรใหม่หรือคัดลอก แล้วต้องตั้งชื่อใหม่ */}
               <button
                 onClick={async () => {
-                  const { value: newPlanName } = await Swal.fire({
+                  const { value: newName } = await Swal.fire({
                     title: "📄 ตั้งชื่อแผนเวรใหม่",
                     input: "text",
                     inputValue: shiftPlanName,
                     inputPlaceholder: "เช่น เวรเดือนกรกฎาคม",
                     showCancelButton: true,
                     confirmButtonText: "💾 บันทึก",
-                    inputValidator: (value) =>
-                      !value.trim() && "กรุณาระบุชื่อแผนเวร",
+                    inputValidator: (value) => !value.trim() && "กรุณาระบุชื่อ",
                   });
-                  if (!newPlanName) return;
 
-                  // ตรวจสอบชื่อซ้ำก่อน
-                  const { data: existing } = await supabase
+                  if (!newName) return;
+
+                  const trimmedName = newName.trim();
+
+                  const { data: existing, error: checkError } = await supabase
                     .from("shift_plans")
                     .select("id")
                     .eq("hospital_id", hospitalId)
                     .eq("ward_id", wardId)
-                    .eq("name", newPlanName.trim())
+                    .eq("name", trimmedName)
                     .eq("year", year)
                     .eq("month", month);
+
+                  if (checkError) {
+                    toast.error("❌ เกิดข้อผิดพลาดระหว่างตรวจสอบชื่อ");
+                    return;
+                  }
 
                   if (existing && existing.length > 0) {
                     Swal.fire(
@@ -1360,18 +1406,141 @@ function ShiftPlanner() {
                     return;
                   }
 
-                  setShiftPlanName(newPlanName); // ตั้งชื่อแผนเวรใหม่
-                  await saveToSupabase(newPlanName); // บันทึกใหม่
-                  await fetchExistingPlans(); // โหลดรายการใหม่
+                  try {
+                    setShiftPlanName(trimmedName);
+                    setEditingPlan(false);
+
+                    const result = await saveToSupabase(trimmedName);
+
+                    if (result?.error) {
+                      if (
+                        result.error.message.includes("duplicate key") ||
+                        result.error.message.includes("unique_nurse_shift")
+                      ) {
+                        toast.error("❌ ข้อมูลซ้ำ: กรุณาตรวจสอบเวรที่ซ้ำกัน");
+                      } else {
+                        toast.error(
+                          "❌ บันทึกผิดพลาด: " + result.error.message
+                        );
+                      }
+                    } else {
+                      // toast.success("✅ บันทึกเป็นตารางเวรใหม่เรียบร้อย");
+                      await fetchExistingPlans();
+                    }
+                  } catch (e) {
+                    toast.error("❌ เกิดข้อผิดพลาด: " + e.message);
+                  }
                 }}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                className="px-4 py-2 bg-blue-600 text-white rounded"
               >
-                💾 บันทึกตารางเวรใหม่
+                🆕 บันทึกเป็นตารางเวรใหม่
               </button>
-            ))}
+            </>
+          )}
         </div>
       )}
 
+      {/* ตารางเวรพยาบาล */}
+      {!cleared && (
+        <table className="table-auto border-collapse">
+          <thead>
+            <tr>
+              <th className="border px-2 py-1 bg-gray-200 text-black sticky left-0 z-10">
+                👩‍⚕️ พยาบาล
+              </th>
+              {Array.from({ length: daysInMonth }, (_, i) => (
+                <th key={i} className="border px-2 py-1 bg-gray-100 text-black">
+                  {i + 1}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {nurseList.map((nurse, rowIndex) => (
+              <tr key={rowIndex}>
+                <td className="border px-2 py-1 sticky left-0 bg-white text-black z-10">
+                  {nurse.display_name || nurseMap[nurse.id] || nurse.name}
+                </td>
+
+                {Array.from({ length: daysInMonth }, (_, dayIndex) => {
+                  const day = dayIndex + 1;
+                  const dateKey = `${yearMonth}-${day
+                    .toString()
+                    .padStart(2, "0")}`;
+                  const assigned = assignments[dateKey]?.[nurse.id] || [];
+                  return (
+                    <td
+                      key={dayIndex}
+                      className="border px-1 py-1 text-center text-black"
+                    >
+                      {shifts.map((shift) => {
+                        const dateKey = `${yearMonth}-${day
+                          .toString()
+                          .padStart(2, "0")}`;
+                        const assigned = assignments[dateKey]?.[nurse.id] || [];
+                        const isHoliday =
+                          nurseHolidays?.[nurse.id]?.has?.(dateKey);
+                        const isAssigned = assigned.includes(shift);
+
+                        const bgColor = isHoliday
+                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                          : isAssigned
+                          ? shift === "morning"
+                            ? "bg-blue-300"
+                            : shift === "evening"
+                            ? "bg-orange-300"
+                            : "bg-purple-300"
+                          : "bg-gray-100";
+
+                        return (
+                          <div
+                            key={shift}
+                            onClick={() => {
+                              if (!canEdit) return; // 🔒 ห้ามคลิกถ้าไม่มีสิทธิ์
+                              if (!isHoliday) toggleShift(nurse, day, shift);
+                            }}
+                            className={`text-sm rounded px-1 mb-0.5 ${bgColor} ${
+                              canEdit && !isHoliday
+                                ? "cursor-pointer"
+                                : "cursor-default"
+                            }`}
+                            title={isHoliday ? "ลางาน" : ""}
+                          >
+                            {shiftLabels[shift]}
+                          </div>
+                        );
+                      })}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {summaryText && (
+        <div className="mt-6 bg-gray-100 p-4 rounded border text-sm text-black max-w-[500px] mx-auto">
+          <details>
+            <summary className="cursor-pointer font-semibold">
+              📋 แสดง/ซ่อนสรุปเวรรายวัน
+            </summary>
+            <div className="mt-2">
+              <pre className="whitespace-pre-wrap">{summaryText}</pre>
+              <button
+                className="mt-2 bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded"
+                onClick={() => {
+                  navigator.clipboard.writeText(summaryText);
+                  toast.success("📋 คัดลอกข้อความสรุปแล้ว");
+                }}
+              >
+                📎 คัดลอกข้อความ
+              </button>
+            </div>
+          </details>
+        </div>
+      )}
+
+      <br />
       {/* ✅ Modal ยืนยัน */}
       {showConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -1394,95 +1563,97 @@ function ShiftPlanner() {
                 onClick={handleConfirmClear}
                 className="px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded"
               >
-                ✅ ล้างข้อมูล
+                🗑 ล้างข้อมูล
               </button>
             </div>
           </div>
         </div>
       )}
+
       {/* ข้อความสถานะ */}
-      {statusMessage && (
+
+      {!cleared && statusMessage && (
         <div className="mb-4 text-sm text-white bg-gray-800 p-2 rounded">
           {statusMessage}
         </div>
       )}
 
-      {/* ตารางเวรพยาบาล */}
-      <table className="table-auto border-collapse">
-        <thead>
-          <tr>
-            <th className="border px-2 py-1 bg-gray-200 text-black sticky left-0 z-10">
-              👩‍⚕️ พยาบาล
-            </th>
-            {Array.from({ length: daysInMonth }, (_, i) => (
-              <th key={i} className="border px-2 py-1 bg-gray-100 text-black">
-                {i + 1}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {nurseList.map((nurse, rowIndex) => (
-            <tr key={rowIndex}>
-              <td className="border px-2 py-1 sticky left-0 bg-white text-black z-10">
-                {nurse.display_name || nurseMap[nurse.id] || nurse.name}
-              </td>
+      {showEditShiftModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white max-w-3xl w-full p-6 rounded shadow-lg overflow-y-auto max-h-[80vh]">
+            <h2 className="text-xl font-bold text-black mb-4">
+              📝 แก้ไขรายละเอียดเวร
+            </h2>
+            <table className="w-full table-auto border-collapse mb-4 text-sm">
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="border text-black px-2 py-1">👩‍⚕️ พยาบาล</th>
+                  <th className="border text-black px-2 py-1">📅 วันที่</th>
+                  <th className="border text-black px-2 py-1">⏰ เวร</th>
+                  <th className="border text-black px-2 py-1">🛠 ดำเนินการ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(assignments).flatMap(([shift_date, nurses]) =>
+                  Object.entries(nurses).flatMap(([nurse_id, shiftArray]) =>
+                    Array.isArray(shiftArray)
+                      ? shiftArray.map((shiftInfo, idx) => {
+                          const shift_id = shiftInfo.id;
+                          const shift_type = shiftInfo.type;
 
-              {Array.from({ length: daysInMonth }, (_, dayIndex) => {
-                const day = dayIndex + 1;
-                const dateKey = `${yearMonth}-${day
-                  .toString()
-                  .padStart(2, "0")}`;
-                const assigned = assignments[dateKey]?.[nurse.id] || [];
-                return (
-                  <td
-                    key={dayIndex}
-                    className="border px-1 py-1 text-center text-black"
-                  >
-                    {shifts.map((shift) => {
-                      const dateKey = `${yearMonth}-${day
-                        .toString()
-                        .padStart(2, "0")}`;
-                      const assigned = assignments[dateKey]?.[nurse.id] || [];
-                      const isHoliday =
-                        nurseHolidays?.[nurse.id]?.has?.(dateKey);
-                      const isAssigned = assigned.includes(shift);
+                          return (
+                            <tr
+                              key={
+                                shift_id || `${nurse_id}-${shift_type}-${idx}`
+                              }
+                            >
+                              <td className="border text-black px-2 py-1">
+                                {nurseMap[nurse_id] || "ไม่ทราบชื่อ"}
+                              </td>
+                              <td className="border text-black px-2 py-1">
+                                {shift_date}
+                              </td>
+                              <td className="border text-black px-2 py-1">
+                                {shiftLabels[shift_type] || shift_type}
+                              </td>
+                              <td className="border text-black px-2 py-1 text-center">
+                                <button
+                                  onClick={() => {
+                                    if (shift_id) {
+                                      openEditShiftFromDatabase(shift_id);
+                                    } else {
+                                      openEditShiftFromAssignments({
+                                        date: shift_date,
+                                        nurseId: nurse_id,
+                                        shiftType: shift_type,
+                                      });
+                                    }
+                                  }}
+                                  className="text-blue-600 hover:underline"
+                                >
+                                  แก้ไข
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      : []
+                  )
+                )}
+              </tbody>
+            </table>
 
-                      const bgColor = isHoliday
-                        ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                        : isAssigned
-                        ? shift === "morning"
-                          ? "bg-blue-300"
-                          : shift === "evening"
-                          ? "bg-orange-300"
-                          : "bg-purple-300"
-                        : "bg-gray-100";
-
-                      return (
-                        <div
-                          key={shift}
-                          onClick={() => {
-                            if (!canEdit) return; // 🔒 ห้ามคลิกถ้าไม่มีสิทธิ์
-                            if (!isHoliday) toggleShift(nurse, day, shift);
-                          }}
-                          className={`text-sm rounded px-1 mb-0.5 ${bgColor} ${
-                            canEdit && !isHoliday
-                              ? "cursor-pointer"
-                              : "cursor-default"
-                          }`}
-                          title={isHoliday ? "ลางาน" : ""}
-                        >
-                          {shiftLabels[shift]}
-                        </div>
-                      );
-                    })}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+            <div className="text-right">
+              <button
+                onClick={() => setShowEditShiftModal(false)}
+                className="bg-gray-500 text-white px-4 py-2 rounded"
+              >
+                ❌ ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
