@@ -28,6 +28,9 @@ export default function NurseManagerPage() {
     ward_id: "",
     is_active_for_shift: true,
     is_active_for_massage: false,
+    allow_morning: true,
+    allow_evening: true,
+    allow_night: true,
   });
 
   const [wards, setWards] = useState([]);
@@ -174,6 +177,9 @@ export default function NurseManagerPage() {
       display_name: formData.display_name,
       is_active_for_shift: formData.is_active_for_shift,
       is_active_for_massage: formData.is_active_for_massage,
+      allow_morning: formData.allow_morning,
+      allow_evening: formData.allow_evening,
+      allow_night: formData.allow_night,
     };
 
     if (formData.hospital_id) {
@@ -222,6 +228,9 @@ export default function NurseManagerPage() {
       ward_id: null,
       is_active_for_shift: true,
       is_active_for_massage: false,
+      allow_morning: true,
+      allow_evening: true,
+      allow_night: true,
     });
   }
 
@@ -462,6 +471,38 @@ export default function NurseManagerPage() {
               </option>
             ))}
           </select>
+          <div className="flex items-center space-x-4">
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.allow_morning}
+                onChange={(e) =>
+                  setFormData({ ...formData, allow_morning: e.target.checked })
+                }
+              />
+              <span>ขึ้นเวรเช้า</span>
+            </label>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.allow_evening}
+                onChange={(e) =>
+                  setFormData({ ...formData, allow_evening: e.target.checked })
+                }
+              />
+              <span>ขึ้นเวรบ่าย</span>
+            </label>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.allow_night}
+                onChange={(e) =>
+                  setFormData({ ...formData, allow_night: e.target.checked })
+                }
+              />
+              <span>ขึ้นเวรดึก</span>
+            </label>
+          </div>
         </div>
       )}
       {!editId && !addingNew ? (
@@ -506,6 +547,10 @@ export default function NurseManagerPage() {
               <th className="border p-1">ลำดับในตารางเวร</th>
               <th className="border p-1">ตำแหน่ง</th>
               <th className="border p-1">วอร์ด</th>
+              {/* ✅ ใหม่ – สิทธิ์ขึ้นเวรแต่ละช่วง */}
+              <th className="border p-1">เช้า</th>
+              <th className="border p-1">บ่าย</th>
+              <th className="border p-1">ดึก</th>
               <th className="border p-1">ขึ้นเวร</th>
               <th className="border p-1">นวด</th>
               <th className="border p-1">กระทำการ</th>
@@ -523,6 +568,18 @@ export default function NurseManagerPage() {
                 <td className="border p-1 text-white">
                   {wards.find((w) => w.id === n.ward_id)?.name || "-"}
                 </td>
+
+                {/* ✅ ใหม่ – โชว์สิทธิ์ขึ้นเวร */}
+                <td className="border p-1 text-center">
+                  {n.allow_morning ? "✅" : "❌"}
+                </td>
+                <td className="border p-1 text-center">
+                  {n.allow_evening ? "✅" : "❌"}
+                </td>
+                <td className="border p-1 text-center">
+                  {n.allow_night ? "✅" : "❌"}
+                </td>
+                
                 <td className="border p-1 text-center">
                   {n.is_active_for_shift ? "✅" : "❌"}
                 </td>
@@ -547,6 +604,9 @@ export default function NurseManagerPage() {
                         ward_id: n.ward_id || "",
                         is_active_for_shift: n.is_active_for_shift,
                         is_active_for_massage: n.is_active_for_massage,
+                        allow_morning: n.allow_morning,
+                        allow_evening: n.allow_evening,
+                        allow_night: n.allow_night,
                       });
                       setEditId(n.id);
                     }}
