@@ -3,6 +3,7 @@
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 import { toast } from "react-toastify";
+import Swal from "sweetalert2";
 import { supabase } from "../../lib/supabaseClient";
 import dayjs from "dayjs";
 import "dayjs/locale/th";
@@ -17,18 +18,17 @@ export default function NurseHolidaysPage() {
   const [nurse, setNurse] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const leaveTypes = ["ลาป่วย", "ลากิจ", "ลาพักร้อน"];
+  const leaveTypes = ["ลาป่วย", "ลากิจ", "ลาพักร้อน", "อบรม"];
+  const [notes, setNotes] = useState({}); // ⬅️ เก็บรายละเอียดแต่ละวันที่ key = date
 
+  // 🔥 เอา Swal ออกจาก toggleDate
   const toggleDate = (dateStr) => {
     setSelectedDates((prev) => {
       const existing = prev[dateStr];
-      if (existing) {
-        const nextType =
-          leaveTypes[(leaveTypes.indexOf(existing) + 1) % leaveTypes.length];
-        return { ...prev, [dateStr]: nextType };
-      } else {
-        return { ...prev, [dateStr]: leaveTypes[0] };
-      }
+      const nextType =
+        leaveTypes[(leaveTypes.indexOf(existing) + 1) % leaveTypes.length] ||
+        leaveTypes[0];
+      return { ...prev, [dateStr]: nextType };
     });
   };
 
@@ -44,6 +44,7 @@ export default function NurseHolidaysPage() {
       date,
       year,
       type,
+      note: notes[date] || null,
     }));
     if (inserts.length > 0) {
       await supabase.from("nurse_holidays").insert(inserts);
@@ -60,11 +61,15 @@ export default function NurseHolidaysPage() {
       .select("*")
       .eq("nurse_id", nurseId)
       .eq("year", year);
+
     const initial = {};
+    const noteMap = {};
     data?.forEach((d) => {
       initial[d.date] = d.type;
+      if (d.note) noteMap[d.date] = d.note;
     });
     setSelectedDates(initial);
+    setNotes(noteMap); // ✅ โหลด note ด้วย
   };
 
   useEffect(() => {
@@ -96,6 +101,39 @@ export default function NurseHolidaysPage() {
     acc[month].push(day);
     return acc;
   }, {});
+
+  const openNoteEditor = async (dateStr) => {
+    const { value: note } = await Swal.fire({
+      title: `📝 หมายเหตุ (${dateStr})`,
+      input: "text",
+      inputValue: notes[dateStr] || "",
+      showCancelButton: true,
+      confirmButtonText: "💾 บันทึก",
+    });
+
+    if (note !== undefined) {
+      setNotes((prev) => ({ ...prev, [dateStr]: note }));
+    }
+  };
+  
+  const showMonthlyNotes = (days) => {
+    const entries = days
+      .map((d) => {
+        const dateStr = d.format("YYYY-MM-DD");
+        const note = notes[dateStr];
+        return note ? `${dateStr} – ${note}` : null;
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    Swal.fire({
+      title: "📋 หมายเหตุประจำเดือน",
+      html: `<pre style="text-align:left">${
+        entries || "ไม่มีหมายเหตุในเดือนนี้"
+      }</pre>`,
+      confirmButtonText: "ปิด",
+    });
+  };
 
   return (
     <div className="p-4 max-w-5xl mx-auto">
@@ -136,6 +174,9 @@ export default function NurseHolidaysPage() {
           <div className="flex items-center gap-1">
             <div className="w-4 h-4 bg-green-200 border" /> ลาพักร้อน
           </div>
+          <div className="flex items-center gap-1">
+            <div className="w-4 h-4 bg-blue-200 border" /> อบรม
+          </div>
         </div>
       </div>
 
@@ -158,26 +199,50 @@ export default function NurseHolidaysPage() {
                     const dateStr = d.format("YYYY-MM-DD");
                     const label = d.format("D");
                     const selectedType = selectedDates[dateStr];
+                    const noteText = notes[dateStr];
+
                     return (
                       <div
                         key={dateStr}
                         onClick={() => toggleDate(dateStr)}
-                        className={`border w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-sm sm:text-base cursor-pointer rounded text-center ${
+                        className={`relative border w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-sm sm:text-base cursor-pointer rounded text-center ${
                           selectedType === "ลาป่วย"
                             ? "bg-red-200"
                             : selectedType === "ลากิจ"
                             ? "bg-yellow-200"
                             : selectedType === "ลาพักร้อน"
                             ? "bg-green-200"
+                            : selectedType === "อบรม"
+                            ? "bg-blue-200"
                             : "bg-white"
                         }`}
                         title={selectedType || ""}
                       >
                         {label}
+                        <div
+                          className="absolute top-0 right-0 w-5 h-5 flex items-center justify-center cursor-pointer text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openNoteEditor(dateStr);
+                          }}
+                          title={
+                            noteText ? `✏️ ${noteText}` : "📝 เพิ่มหมายเหตุ"
+                          }
+                        >
+                          {noteText ? "✏️" : "📝"}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
+                {days.some((d) => notes[d.format("YYYY-MM-DD")]) && (
+                  <button
+                    className="mt-2 text-xs text-orange-700 underline"
+                    onClick={() => showMonthlyNotes(days)}
+                  >
+                    📋 ดูหมายเหตุทั้งหมดของเดือนนี้
+                  </button>
+                )}
               </div>
             );
           })}

@@ -216,6 +216,7 @@ export default function AdminWards() {
             value={selectedHospitalId}
             onChange={(e) => setSelectedHospitalId(e.target.value)}
             className="border px-2 py-1"
+            text-black
             disabled={hospitals.length === 1 && currentUser?.role !== "admin"}
           >
             <option value="">เลือกโรงพยาบาล</option>

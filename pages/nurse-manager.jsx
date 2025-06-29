@@ -10,7 +10,11 @@ export default function NurseManagerPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [filterHospitalId, setFilterHospitalId] = useState("");
+  const [filterWardId, setFilterWardId] = useState("");
+
   const [formData, setFormData] = useState({
+    prefix: "",
     name: "",
     first_name: "",
     last_name: "",
@@ -33,6 +37,11 @@ export default function NurseManagerPage() {
   const isAdmin = currentUser?.role === "admin";
   const isHeadNurse = currentUser?.user_type === "หัวหน้าพยาบาล";
   const isWardHead = currentUser?.user_type === "หัวหน้าวอร์ด";
+  // 🏥 ค่ารหัส รพ.ที่ "กำลังใช้" ในหน้า (แอดมิน = filter, หัวหน้า = ของตัวเอง)
+  const activeHospitalId =
+    isAdmin || isHeadNurse
+      ? filterHospitalId || currentUser?.hospital_id
+      : currentUser?.hospital_id;
 
   const [showConfirm, setShowConfirm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
@@ -56,34 +65,27 @@ export default function NurseManagerPage() {
     if (!currentUser) return;
     fetchHospitals();
     fetchNurses();
-  }, [currentUser]);
+  }, [currentUser, filterHospitalId, filterWardId]);
 
   useEffect(() => {
     if (!currentUser) return;
 
-    let query = supabase.from("wards").select();
-
-    if (currentUser.role === "admin") {
-      if (formData.hospital_id) {
-        query = query.eq("hospital_id", formData.hospital_id);
-      } else {
-        setWards([]);
-        return;
-      }
-    } else if (currentUser.user_type === "หัวหน้าพยาบาล") {
-      query = query.eq("hospital_id", currentUser.hospital_id);
-    } else if (currentUser.user_type === "หัวหน้าวอร์ด") {
-      query = query.eq("id", currentUser.ward_id);
-    } else {
+    // ไม่มี รพ. = ไม่ต้องโหลดวอร์ด
+    if (!activeHospitalId) {
       setWards([]);
       return;
     }
 
-    query.then(({ data, error }) => {
-      if (error) console.error("Ward fetch error", error);
-      setWards(data || []);
-    });
-  }, [formData.hospital_id, currentUser]);
+    // โหลดวอร์ดภายใต้ activeHospitalId
+    supabase
+      .from("wards")
+      .select("id, name, hospital_id")
+      .eq("hospital_id", activeHospitalId)
+      .then(({ data, error }) => {
+        if (error) console.error("Ward fetch error", error);
+        setWards(data || []);
+      });
+  }, [activeHospitalId, currentUser]);
 
   async function fetchHospitals() {
     if (!currentUser) return;
@@ -111,6 +113,9 @@ export default function NurseManagerPage() {
       .from("nurses")
       .select("*", { count: "exact" })
       .order("display_order", { ascending: true });
+
+    if (filterHospitalId) query = query.eq("hospital_id", filterHospitalId);
+    if (filterWardId) query = query.eq("ward_id", filterWardId);
 
     if (currentUser?.role !== "admin") {
       if (currentUser?.user_type === "หัวหน้าพยาบาล") {
@@ -157,6 +162,7 @@ export default function NurseManagerPage() {
     }
 
     const updatedFields = {
+      prefix: formData.prefix,
       name: formData.name,
       first_name: formData.first_name,
       last_name: formData.last_name,
@@ -202,6 +208,7 @@ export default function NurseManagerPage() {
 
   function resetForm() {
     setFormData({
+      prefix: "",
       name: "",
       first_name: "",
       last_name: "",
@@ -230,31 +237,76 @@ export default function NurseManagerPage() {
     fetchNurses();
   }
 
-  const filteredNurses = nurses.filter((n) =>
-    `${n.first_name} ${n.last_name}`
+  const filteredNurses = nurses.filter((n) => {
+    const matchName = `${n.prefix || ""} ${n.first_name} ${n.last_name}`
       .toLowerCase()
-      .includes(searchTerm.toLowerCase())
-  );
+      .includes(searchTerm.toLowerCase());
+
+    const matchHospital = filterHospitalId
+      ? n.hospital_id === filterHospitalId
+      : true;
+
+    const matchWard = filterWardId ? n.ward_id === filterWardId : true;
+
+    return matchName && matchHospital && matchWard;
+  });
 
   return (
     <div className="p-4">
       <h1 className="text-xl font-bold mb-4">🧑‍⚕️ จัดการรายชื่อพยาบาล</h1>
+      {/* 🔍 ฟิลเตอร์ + ค้นหา */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        {/* เลือกโรงพยาบาล */}
+        <select
+          className="border px-2 py-1 text-black bg-white"
+          value={filterHospitalId}
+          onChange={(e) => {
+            setFilterWardId(""); // รีเซ็ตวอร์ดก่อน
+            setFilterHospitalId(e.target.value);
+          }}
+          disabled={!isAdmin && !isHeadNurse}
+        >
+          <option value="">🏥 ทุกโรงพยาบาล</option>
+          {hospitals.map((h) => (
+            <option key={h.id} value={h.id}>
+              {h.name}
+            </option>
+          ))}
+        </select>
 
-      <input
-        type="text"
-        placeholder="ค้นหาชื่อพยาบาล..."
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        className="border px-3 py-1 mb-3 w-full"
-      />
+        {/* เลือกวอร์ด */}
+        <select
+          className="border px-2 py-1 text-black bg-white"
+          value={filterWardId}
+          onChange={(e) => setFilterWardId(e.target.value)}
+          disabled={
+            !filterHospitalId || (!isAdmin && !isHeadNurse && !isWardHead)
+          }
+        >
+          <option value="">🛏️ ทุกวอร์ด</option>
+          {wards
+            .filter((w) =>
+              filterHospitalId ? w.hospital_id === filterHospitalId : true
+            )
+            .map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+        </select>
+
+        {/* ช่องค้นหาเดิม */}
+        <input
+          type="text"
+          className="border px-3 py-1 flex-1"
+          placeholder="ค้นหาชื่อพยาบาล..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+
       {(addingNew || editId) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-4 bg-white p-4 text-black">
-          <input
-            placeholder="ชื่อเรียก (ชื่อเล่น)"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="border px-2 py-1 bg-white text-black"
-          />
           <input
             placeholder="ชื่อที่แสดงในตารางเวร"
             value={formData.display_name}
@@ -263,7 +315,44 @@ export default function NurseManagerPage() {
             }
             className="border px-2 py-1 bg-white text-black"
           />
+          <input
+            placeholder="ชื่อเรียก (ชื่อเล่น)"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            className="border px-2 py-1 bg-white text-black"
+          />
+          <select
+            value={formData.prefix}
+            onChange={(e) =>
+              setFormData({ ...formData, prefix: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+          >
+            <option value="">คำนำหน้า</option>
+            <option value="นาย">นาย</option>
+            <option value="นาง">นาง</option>
+            <option value="น.ส.">น.ส.</option>
+            <option value="พญ.">พญ.</option>
+            <option value="นพ.">นพ.</option>
+            {/* เพิ่มตามต้องการ */}
+          </select>
 
+          <input
+            placeholder="ชื่อจริง"
+            value={formData.first_name}
+            onChange={(e) =>
+              setFormData({ ...formData, first_name: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+          />
+          <input
+            placeholder="นามสกุล"
+            value={formData.last_name}
+            onChange={(e) =>
+              setFormData({ ...formData, last_name: e.target.value })
+            }
+            className="border px-2 py-1 bg-white text-black"
+          />
           <label className="text-sm font-semibold">
             ลำดับในตารางเวร
             <input
@@ -309,22 +398,6 @@ export default function NurseManagerPage() {
             </label>
           </div>
 
-          <input
-            placeholder="ชื่อจริง"
-            value={formData.first_name}
-            onChange={(e) =>
-              setFormData({ ...formData, first_name: e.target.value })
-            }
-            className="border px-2 py-1 bg-white text-black"
-          />
-          <input
-            placeholder="นามสกุล"
-            value={formData.last_name}
-            onChange={(e) =>
-              setFormData({ ...formData, last_name: e.target.value })
-            }
-            className="border px-2 py-1 bg-white text-black"
-          />
           <input
             placeholder="ตำแหน่ง"
             value={formData.position}
@@ -428,7 +501,7 @@ export default function NurseManagerPage() {
           <thead>
             <tr className="bg-white text-black dark:bg-gray-900 dark:text-white">
               <th className="border p-1">
-                ชื่อเล่น (ชื่อเรียก) - ชื่อแสดงผลในตารางเวร
+                ชื่อแสดงผลในตารางเวร - ชื่อเล่น (ชื่อเรียก)
               </th>
               <th className="border p-1">ลำดับในตารางเวร</th>
               <th className="border p-1">ตำแหน่ง</th>
@@ -442,7 +515,8 @@ export default function NurseManagerPage() {
             {filteredNurses.map((n) => (
               <tr key={n.id}>
                 <td className="border p-1 text-white">
-                  {n.name} - {n.display_name}
+                  {n.display_name}
+                  {n.name ? ` (${n.name})` : ""}
                 </td>
                 <td className="border p-1 text-white">{n.display_order}</td>
                 <td className="border p-1 text-white">{n.position}</td>
@@ -459,6 +533,7 @@ export default function NurseManagerPage() {
                   <button
                     onClick={() => {
                       setFormData({
+                        prefix: n.prefix || "",
                         name: n.name || "",
                         display_name: n.display_name || "",
                         first_name: n.first_name || "",
