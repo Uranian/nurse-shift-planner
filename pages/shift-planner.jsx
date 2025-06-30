@@ -493,16 +493,15 @@ function ShiftPlanner() {
     loadPlanId();
   }, [hospitalId, wardId, year, month]);
 
+  /* ==========================================================
+   📡  โหลดเวรจาก nurse_shifts (ตาม planId) แล้ว map → assignments
+   ========================================================== */
   useEffect(() => {
+    if (!hospitalId || !wardId || !planId || !nurseList.length) return;
+
     const fetchFromSupabase = async () => {
-      // 🧼 เคลียร์คำเตือนเดิมทุกครั้งที่เปลี่ยนเดือน
-      lastWarnings.current.clear();
+      lastWarnings.current.clear(); // ล้างเตือนเก่า
 
-      if (!hospitalId || !wardId) return;
-      const monthStart = `${yearMonth}-01`;
-      const monthEnd = dayjs(monthStart).endOf("month").format("YYYY-MM-DD");
-
-      if (!planId) return;
       const { data, error } = await supabase
         .from("nurse_shifts")
         .select("*")
@@ -515,28 +514,38 @@ function ShiftPlanner() {
         return;
       }
 
-      if (!data || data.length === 0) {
-        setAssignments({});
+      if (!data?.length) {
+        /* 👉 ไม่มีเวรเก่า → เริ่มจากแถวว่างทุกคน */
+        const blank = {};
+        nurseList.forEach((n) => (blank[n.id] = {}));
+        setAssignments(blank);
         setStatusMessage("🆕 ไม่มีข้อมูลเก่าในเดือนนี้");
         return;
       }
+
+      /* 👉 มีเวรเก่า → map เป็น assignments */
       const loaded = {};
-      for (const row of data) {
-        const date = row.shift_date;
+      data.forEach((row) => {
         const nurseId = row.nurse_id;
+        const dateKey = row.shift_date; // YYYY-MM-DD
 
         if (!loaded[nurseId]) loaded[nurseId] = {};
-        if (!loaded[nurseId][date]) loaded[nurseId][date] = [];
+        if (!loaded[nurseId][dateKey]) loaded[nurseId][dateKey] = [];
 
-        loaded[nurseId][date].push(row.shift_type);
-      }
+        loaded[nurseId][dateKey].push(row.shift_type);
+      });
+
+      /* 👉 เติมแถวคนที่ไม่มีเวรเลย */
+      nurseList.forEach((n) => {
+        if (!loaded[n.id]) loaded[n.id] = {};
+      });
 
       setAssignments(loaded);
       setStatusMessage("✅ โหลดข้อมูลแล้ว");
     };
 
     fetchFromSupabase();
-  }, [year, month, hospitalId, wardId]);
+  }, [hospitalId, wardId, planId, year, month, nurseList]); // ← เพิ่ม nurseList
 
   // 🧠 สุ่มอาร์เรย์แบบ Fisher–Yates
   // ---------- helper for auto-scheduling ----------
@@ -549,29 +558,36 @@ function ShiftPlanner() {
     return a;
   }
 
-  /* รอบ 1 จะไล่ให้ “พยาบาลแต่ละคน” วิ่งลูป 10 วันแบบ
+  /* เคารพ allow_morning / evening / night 
+  ให้วันพักตรงกับ  month_rest_days ของวอร์ด (rest  ≠ holiday จริง)
+  PATTERN 10 วัน  (ช,ช,พัก,พัก,บ,บ,ด,ด,พัก,พัก)
   เช้า ➜ เช้า ➜ พัก ➜ พัก ➜ บ่าย ➜ บ่าย ➜ ดึก ➜ ดึก ➜ พัก ➜ พัก … (วนใหม่)
   ถ้าเวรนั้นถูก ปฏิเสธ (allow_*) หรือโควตาวันนั้นเต็ม จะข้ามเป็นพักอัตโนมัติ
-  พอครบทุกคนแล้ว (รอบ 1) ถ้ายังขาดคนต่อเวรใดก็ใช้ “รอบ 2” เติมแบบสุ่มเหมือนเดิม */
+  พอครบทุกคนแล้ว (รอบ 1) ถ้ายังขาดคนต่อเวรใดก็ใช้ “รอบ 2” เติมแบบสุ่มเหมือนเดิม 
+  กระจาย offset ให้แต่ละพยาบาล → พัก (=null) จะเฉลี่ยเท่ากัน  
+  ข้ามเสาร์-อาทิตย์ถ้า nurse.allow_weekend == false
+  จัดคน normal ก่อน  → low_priority ต่อท้าย
+  1️⃣ พยายามอุดโควตาด้วยพยาบาลปกติก่อน (คนที่ low_priority === false)
+  2️⃣ ถ้ายังไม่เต็ม จึงค่อยดึงคน low_priority มาช่วยอุด*/
+  /* -------------------------------------------------------------
+     𝐛𝐮𝐢𝐥𝐝𝐀𝐮𝐭𝐨𝐀𝐬𝐬𝐢𝐠𝐧𝐦𝐞𝐧𝐭𝐬  (เวอร์ชัน balance rest / fill gaps)
+     ------------------------------------------------------------- */
+  /* ---------- helper สำหรับเวรอัตโนมัติ ---------- */
+  /* ---------- helper สำหรับเวรอัตโนมัติ (v3) ---------- */
   function buildAutoAssignments() {
-    /* 1) ค่าคงที่ ---------------------------------------------------- */
+    /* 1) ค่าพื้นฐาน */
     const maxPerShift = {
       morning: wardConfig?.max_morning_shift_per_day ?? 4,
       evening: wardConfig?.max_evening_shift_per_day ?? 3,
       night: wardConfig?.max_night_shift_per_day ?? 3,
     };
+    const minRestDays =
+      Array.isArray(wardConfig?.month_rest_days) &&
+      wardConfig.month_rest_days.length === 12
+        ? wardConfig.month_rest_days[month - 1]
+        : 8;
 
-    /* 2) เตรียมโครงข้อมูล ------------------------------------------- */
-    const assignments = {};
-    nurseList.forEach((n) => (assignments[n.id] = {}));
-
-    /* 3) ตารางนับ quota ต่อวัน/เวร ----------------------------------- */
-    const dailyCnt = Array(daysInMonth + 1)
-      .fill(0)
-      .map(() => ({ morning: 0, evening: 0, night: 0 }));
-
-    /* 4) ลูป 10-วัน (เช้า เช้า พัก พัก บ่าย บ่าย ดึก ดึก พัก พัก) ---- */
-    const pattern = [
+    const PATTERN = [
       "morning",
       "morning",
       null,
@@ -583,55 +599,140 @@ function ShiftPlanner() {
       null,
       null,
     ];
+    const LEN = PATTERN.length;
+    const SHIFTS = ["morning", "evening", "night"];
 
-    const nurseObj = nurseList.reduce((o, n) => ((o[n.id] = n), o), {}); // id→object
+    const isWeekend = (d) =>
+      [0, 6].includes(
+        dayjs(
+          `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(
+            2,
+            "0"
+          )}`
+        ).day()
+      );
 
+    /* 2) เตรียมตัวแปร */
+    const assignments = {};
+    const remain = {}; // โควตาเวรที่ลงได้อีก
     nurseList.forEach((n) => {
-      let pIdx = 0;
-      for (let day = 1; day <= daysInMonth; day++) {
-        const shift = pattern[pIdx];
-        pIdx = (pIdx + 1) % pattern.length;
-        if (!shift) continue; // เป็นวันพักตาม pattern
+      assignments[n.id] = {};
 
-        // ไม่อนุญาตเวรนี้
-        if (!nurseObj[n.id][`allow_${shift}`]) continue;
-
-        // โควตาเวรนี้เต็มแล้ว
-        if (dailyCnt[day][shift] >= maxPerShift[shift]) continue;
-
-        // จัดเวรให้พยาบาล
-        if (!assignments[n.id][day]) assignments[n.id][day] = {};
-        assignments[n.id][day][shift] = { value: true };
-        dailyCnt[day][shift]++;
-      }
+      // ถ้าติ๊ก “พักยืดหยุ่น” → ไม่มีวันพักขั้นต่ำ
+      const mustRest = n.rest_flexible ? 0 : minRestDays;
+      remain[n.id] = Math.max(0, daysInMonth - mustRest);
     });
 
-    /* 5) รอบ 2  (ถ้ายังขาด quota)  ---------------------------------- */
-    const shuffle = (arr) => {
-      const a = [...arr];
-      for (let i = a.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [a[i], a[j]] = [a[j], a[i]];
-      }
-      return a;
-    };
+    nurseList.forEach((n) => {
+      assignments[n.id] = {};
+      // --- กำหนด quota งานต่อคน ------------------------------------
+      //   • core           → ต้องเหลือวันพักขั้นต่ำ (minRestDays)
+      //   • rest_flexible  → ทำงานได้เต็มทั้งเดือน (ใช้ 30 วัน)
+      //   • low_priority   → quota เท่า core แต่จะถูกใช้เป็นลำดับท้าย
+      const workCap = (n) =>
+        n.rest_flexible ? daysInMonth : Math.max(0, daysInMonth - minRestDays);
 
-    for (let day = 1; day <= daysInMonth; day++) {
-      ["morning", "evening", "night"].forEach((shift) => {
-        while (dailyCnt[day][shift] < maxPerShift[shift]) {
-          const pool = shuffle(nurseList); // สุ่มหา candidate
-          const cand = pool.find(
-            (n) =>
-              n[`allow_${shift}`] &&
-              !(assignments[n.id]?.[day]?.[shift]?.value === true)
-          );
-          if (!cand) break; // ไม่มีใครลงได้แล้ว
-
-          if (!assignments[cand.id][day]) assignments[cand.id][day] = {};
-          assignments[cand.id][day][shift] = { value: true };
-          dailyCnt[day][shift]++;
-        }
+      nurseList.forEach((n) => {
+        assignments[n.id] = {};
+        remain[n.id] = workCap(n); // ← ใช้ฟังก์ชัน workCap
       });
+    });
+
+    // --- แบ่งกลุ่ม ---
+    const wkMorning = nurseList.filter(
+      // จ-ศ เช้า
+      (n) => !n.allow_weekend && !n.low_priority && n.allow_morning
+    );
+    const coreNurses = nurseList.filter(
+      // ต้องได้วันพักขั้นต่ำ
+      (n) => !n.low_priority && !n.rest_flexible && !wkMorning.includes(n)
+    );
+    const flexNurses = nurseList.filter(
+      // พักยืดหยุ่น
+      (n) => n.rest_flexible && !n.low_priority
+    );
+    const lowPri = nurseList.filter((n) => n.low_priority);
+
+    // ลำดับการจับเวร
+    const normal = [...coreNurses, ...flexNurses];
+
+    // --- สุ่ม offset เพื่อเลื่อน PATTERN ให้กระจายตัว ---
+    const offsets = {};
+    [...coreNurses, ...flexNurses, ...lowPri].forEach(
+      (n, i) => (offsets[n.id] = i % LEN)
+    );
+
+    /* 4) ลูปตามวัน */
+    for (let day = 1; day <= daysInMonth; day++) {
+      const used = { morning: 0, evening: 0, night: 0 };
+
+      /* 4-A) ใส่เวรเช้า จ-ศ ให้กลุ่ม week-day morning */
+      if (!isWeekend(day)) {
+        for (const n of wkMorning) {
+          if (used.morning >= maxPerShift.morning) break;
+          if (remain[n.id] === 0) continue;
+
+          assignments[n.id][day] = assignments[n.id][day] || {};
+          assignments[n.id][day].morning = { value: true };
+          used.morning += 1;
+          remain[n.id] -= 1;
+        }
+      }
+
+      /* 4-B) เติม PATTERN ทีละกลุ่ม */
+      const fillPattern = (arr) => {
+        for (const n of arr) {
+          if (remain[n.id] === 0) continue;
+          if (isWeekend(day) && !n.allow_weekend) continue;
+
+          const want = PATTERN[(day - 1 + offsets[n.id]) % LEN];
+          if (!want) continue;
+          if (!n[`allow_${want}`]) continue;
+          if (used[want] >= maxPerShift[want]) continue;
+
+          assignments[n.id][day] = assignments[n.id][day] || {};
+          assignments[n.id][day][want] = { value: true };
+          used[want] += 1;
+          remain[n.id] -= 1;
+        }
+      };
+      fillPattern(normal);
+      fillPattern(lowPri); // เผื่อ PATTERN ช่วยอุดได้เอง
+
+      /* 4-C) PATCH-PASS – อุดช่องที่ยังขาด */
+      for (const shift of SHIFTS) {
+        let need = maxPerShift[shift] - used[shift];
+        if (need <= 0) continue;
+
+        /* เรียงคนที่เหลือ quota มาก → น้อย, non-lowPri ก่อน */
+        const cand = [...nurseList]
+          .filter(
+            (n) =>
+              remain[n.id] > 0 &&
+              (!isWeekend(day) || n.allow_weekend) &&
+              n[`allow_${shift}`] &&
+              !assignments[n.id][day]?.[shift]
+          )
+          .sort((a, b) => {
+            /* 1) เหลือ quota มากก่อน */
+            const diff = remain[b.id] - remain[a.id];
+            if (diff !== 0) return diff;
+            /* 2) ไม่ใช่ low_priority ก่อน */
+            return a.low_priority === b.low_priority
+              ? 0
+              : a.low_priority
+              ? 1
+              : -1;
+          });
+
+        for (let i = 0; i < need && i < cand.length; i++) {
+          const n = cand[i];
+          assignments[n.id][day] = assignments[n.id][day] || {};
+          assignments[n.id][day][shift] = { value: true };
+          used[shift] += 1;
+          remain[n.id] -= 1;
+        }
+      }
     }
 
     return assignments;
@@ -844,7 +945,7 @@ function ShiftPlanner() {
     const { data: nurses, error: nurseError } = await supabase
       .from("nurses")
       .select(
-        "id, display_name, display_order, allow_morning, allow_evening, allow_night"
+        "id, display_name, display_order, allow_morning, allow_evening, allow_night, allow_weekend, low_priority, rest_flexible"
       )
       .eq("hospital_id", hId)
       .eq("ward_id", wId)
@@ -932,6 +1033,20 @@ function ShiftPlanner() {
     return true;
   };
 
+  useEffect(() => {
+    if (!nurseList.length) return; // ยังไม่มีรายชื่อ
+
+    setAssignments((prev) => {
+      // ถ้ายังไม่มี assignment เลย ให้เริ่มเป็น object ว่าง
+      const cloned = { ...prev };
+
+      nurseList.forEach((n) => {
+        if (!cloned[n.id]) cloned[n.id] = {}; // แถวเปล่า
+      });
+      return cloned; // ✅ setAssignments ใหม่
+    });
+  }, [nurseList]); // ← รันทุกครั้งที่ nurseList เปลี่ยน
+
   const loadPlanById = async (planId) => {
     const { data, error } = await supabase
       .from("nurse_shifts")
@@ -945,11 +1060,12 @@ function ShiftPlanner() {
 
     const newAssignments = {};
 
+    /* ----------------- แปลงผล query เป็น newAssignments ----------------- */
     data.forEach((row) => {
       const nurseId = row.nurse_id;
-      const shiftDate = row.shift_date;
+      const shiftDate = row.shift_date; // "YYYY-MM-DD"
       const day = new Date(shiftDate).getDate(); // 1–31
-      const shift = row.shift_type;
+      const shift = row.shift_type; // "morning" | "evening" | "night"
 
       if (!nurseId || !shiftDate || !shift) return;
 
@@ -964,6 +1080,13 @@ function ShiftPlanner() {
         replacement_name: nurseMap?.[row.replacement_nurse_id] || "",
       };
     });
+
+    /* -------- เติม nurse ที่ไม่มีเวรเลย ให้มีแถวว่างในตาราง -------- */
+    if (nurseList && nurseList.length) {
+      nurseList.forEach((n) => {
+        if (!newAssignments[n.id]) newAssignments[n.id] = {}; // แถวเปล่า
+      });
+    }
 
     setAssignments(newAssignments);
     setPlanId(planId);
@@ -1507,51 +1630,48 @@ function ShiftPlanner() {
                   const newAssignments = buildAutoAssignments();
                   setAssignments(newAssignments);
 
-                  /* ---- ทำสรุปเพื่อแสดง/คัดลอก  (รายวัน + รายพยาบาล) ---- */
+                  /* ---- ทำสรุปเพื่อแสดง/คัดลอก (REST version) ------------------ */
+                  const summaryDaily = [];
+                  const summaryNurse = [];
+
+                  /* quota/วัน */
                   const maxPerShift = {
                     morning: wardConfig?.max_morning_shift_per_day ?? 4,
                     evening: wardConfig?.max_evening_shift_per_day ?? 3,
                     night: wardConfig?.max_night_shift_per_day ?? 3,
                   };
 
+                  let missM = 0,
+                    missE = 0,
+                    missN = 0;
+
                   /* ---------- 1) สรุปรายวัน ---------- */
-                  const dailyArr = [];
                   for (let day = 1; day <= daysInMonth; day++) {
                     const list = { morning: [], evening: [], night: [] };
+
                     nurseList.forEach((n) => {
-                      const e = newAssignments[n.id]?.[day];
-                      if (e?.morning?.value) list.morning.push(n.display_name);
-                      if (e?.evening?.value) list.evening.push(n.display_name);
-                      if (e?.night?.value) list.night.push(n.display_name);
+                      const d = newAssignments[n.id]?.[day];
+                      if (d?.morning?.value) list.morning.push(n.display_name);
+                      if (d?.evening?.value) list.evening.push(n.display_name);
+                      if (d?.night?.value) list.night.push(n.display_name);
                     });
 
-                    const cM = list.morning.length;
-                    const cE = list.evening.length;
-                    const cN = list.night.length;
+                    const cM = list.morning.length,
+                      cE = list.evening.length,
+                      cN = list.night.length;
+                    const needM = Math.max(0, maxPerShift.morning - cM);
+                    const needE = Math.max(0, maxPerShift.evening - cE);
+                    const needN = Math.max(0, maxPerShift.night - cN);
 
-                    const eligibleM = nurseList.filter(
-                      (n) => n.allow_morning
-                    ).length;
-                    const eligibleE = nurseList.filter(
-                      (n) => n.allow_evening
-                    ).length;
-                    const eligibleN = nurseList.filter(
-                      (n) => n.allow_night
-                    ).length;
-
-                    const targetM = Math.min(maxPerShift.morning, eligibleM);
-                    const targetE = Math.min(maxPerShift.evening, eligibleE);
-                    const targetN = Math.min(maxPerShift.night, eligibleN);
-
-                    const needM = Math.max(0, targetM - cM);
-                    const needE = Math.max(0, targetE - cE);
-                    const needN = Math.max(0, targetN - cN);
+                    missM += needM;
+                    missE += needE;
+                    missN += needN;
 
                     const dateStr = `${year}-${String(month).padStart(
                       2,
                       "0"
                     )}-${String(day).padStart(2, "0")}`;
-                    dailyArr.push(
+                    summaryDaily.push(
                       `📅 ${dateStr}
 - เช้า  (${cM}/${maxPerShift.morning})${needM ? ` ขาด ${needM}` : ""}: ${
                         cM ? list.morning.join(", ") : "-"
@@ -1566,7 +1686,6 @@ function ShiftPlanner() {
                   }
 
                   /* ---------- 2) สรุปรายพยาบาล ---------- */
-                  const nurseArr = [];
                   nurseList.forEach((n) => {
                     let m = 0,
                       e = 0,
@@ -1577,21 +1696,28 @@ function ShiftPlanner() {
                       if (a.evening?.value) e++;
                       if (a.night?.value) ni++;
                     }
-                    const work = m + e + ni;
-                    const off = daysInMonth - work;
-                    nurseArr.push(
-                      `- ${n.display_name}: เช้า ${m} | บ่าย ${e} | ดึก ${ni} | พัก ${off}`
+                    const rest = daysInMonth - (m + e + ni);
+                    summaryNurse.push(
+                      `- ${n.display_name}: เช้า ${m} | บ่าย ${e} | ดึก ${ni} | พัก ${rest}`
                     );
                   });
 
-                  /* ---------- 3) รวมข้อความแล้วส่งเข้า state ---------- */
-                  const summaryTextCombined =
-                    dailyArr.join("\n\n") +
-                    `\n\n👩‍⚕️ สรุปรายพยาบาล (${nurseList.length} คน)\n` +
-                    nurseArr.join("\n");
+                  /* ---------- 3) รวม & ส่งเข้า state ---------- */
+                  const missingLines = [];
+                  if (missM) missingLines.push(`- เช้า  : ${missM} เวร`);
+                  if (missE) missingLines.push(`- บ่าย : ${missE} เวร`);
+                  if (missN) missingLines.push(`- ดึก  : ${missN} เวร`);
 
-                  setSummaryText(summaryTextCombined); // ←  ใช้ตัวใหม่
+                  setSummaryText(
+                    summaryDaily.join("\n\n") +
+                      `\n\n👩‍⚕️ สรุปรายพยาบาล (${nurseList.length} คน)\n` +
+                      summaryNurse.join("\n") +
+                      (missingLines.length
+                        ? `\n\n📊 สรุปเวรที่ยังขาด\n${missingLines.join("\n")}`
+                        : "") // ← ถ้าไม่ขาดจะไม่แสดงบล็อกนี้
+                  );
                   setStatusMessage("✅ จัดเวรอัตโนมัติและสร้างสรุปแล้ว");
+                  /* --------------------------------------------------------------- */
                 }}
                 className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 ml-2"
               >

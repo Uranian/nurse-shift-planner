@@ -31,6 +31,9 @@ export default function NurseManagerPage() {
     allow_morning: true,
     allow_evening: true,
     allow_night: true,
+    allow_weekend: true,
+    low_priority: false,
+    rest_flexible: false,
   });
 
   const [wards, setWards] = useState([]);
@@ -50,6 +53,12 @@ export default function NurseManagerPage() {
   const [deleteId, setDeleteId] = useState(null);
 
   const [addingNew, setAddingNew] = useState(false);
+
+  const [newAllowWeekend, setNewAllowWeekend] = useState(true);
+  const [newLowPriority, setNewLowPriority] = useState(false);
+
+  const [editAllowWeekend, setEditAllowWeekend] = useState(true);
+  const [editLowPriority, setEditLowPriority] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("logged_in_user");
@@ -180,6 +189,9 @@ export default function NurseManagerPage() {
       allow_morning: formData.allow_morning,
       allow_evening: formData.allow_evening,
       allow_night: formData.allow_night,
+      allow_weekend: formData.allow_weekend,
+      low_priority: formData.low_priority,
+      rest_flexible: formData.rest_flexible,
     };
 
     if (formData.hospital_id) {
@@ -231,6 +243,9 @@ export default function NurseManagerPage() {
       allow_morning: true,
       allow_evening: true,
       allow_night: true,
+      allow_weekend: true,
+      low_priority: false,
+      rest_flexible: false,
     });
   }
 
@@ -389,9 +404,75 @@ export default function NurseManagerPage() {
                   })
                 }
               />
-              <span>ใช้งานในตารางเวร</span>
+              <span>ใช้ในตารางเวร</span>
+            </label>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.allow_morning}
+                onChange={(e) =>
+                  setFormData({ ...formData, allow_morning: e.target.checked })
+                }
+              />
+              <span>ขึ้นเช้า</span>
+            </label>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.allow_evening}
+                onChange={(e) =>
+                  setFormData({ ...formData, allow_evening: e.target.checked })
+                }
+              />
+              <span>ขึ้นบ่าย</span>
+            </label>
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.allow_night}
+                onChange={(e) =>
+                  setFormData({ ...formData, allow_night: e.target.checked })
+                }
+              />
+              <span>ขึ้นดึก</span>
+            </label>
+            {/* ----- เพิ่มใหม่ ① ทำงานวันหยุดหรือไม่ ----- */}
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.allow_weekend}
+                onChange={(e) =>
+                  setFormData({ ...formData, allow_weekend: e.target.checked })
+                }
+                title="ติ๊ก = สามารถเข้าเวรเสาร์-อาทิตย์"
+              />
+              <span>ทำงานเสาร์-อาทิตย์</span>
             </label>
 
+            {/* ----- เพิ่มใหม่ ② Low-priority (ให้จัดเวรหลังสุด) ----- */}
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.low_priority}
+                onChange={(e) =>
+                  setFormData({ ...formData, low_priority: e.target.checked })
+                }
+                title="ติ๊ก = ให้ระบบพยายามลงเวรให้น้อยที่สุด"
+              />
+              <span>จัดเวรน้อยสุด</span>
+            </label>
+            {/* พักยืดหยุ่น */}
+            <label className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.rest_flexible}
+                onChange={(e) =>
+                  setFormData({ ...formData, rest_flexible: e.target.checked })
+                }
+                title="ติ๊ก = อนุญาตให้มีวันพักต่ำกว่าเกณฑ์"
+              />
+              <span>พักยืดหยุ่น</span>
+            </label>
             <label className="flex items-center space-x-2">
               <input
                 type="checkbox"
@@ -403,7 +484,7 @@ export default function NurseManagerPage() {
                   })
                 }
               />
-              <span>ใช้งานในนัดนวด</span>
+              <span>ใช้ในนัดนวด</span>
             </label>
           </div>
 
@@ -471,38 +552,6 @@ export default function NurseManagerPage() {
               </option>
             ))}
           </select>
-          <div className="flex items-center space-x-4">
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.allow_morning}
-                onChange={(e) =>
-                  setFormData({ ...formData, allow_morning: e.target.checked })
-                }
-              />
-              <span>ขึ้นเวรเช้า</span>
-            </label>
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.allow_evening}
-                onChange={(e) =>
-                  setFormData({ ...formData, allow_evening: e.target.checked })
-                }
-              />
-              <span>ขึ้นเวรบ่าย</span>
-            </label>
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.allow_night}
-                onChange={(e) =>
-                  setFormData({ ...formData, allow_night: e.target.checked })
-                }
-              />
-              <span>ขึ้นเวรดึก</span>
-            </label>
-          </div>
         </div>
       )}
       {!editId && !addingNew ? (
@@ -544,15 +593,17 @@ export default function NurseManagerPage() {
               <th className="border p-1">
                 ชื่อแสดงผลในตารางเวร - ชื่อเล่น (ชื่อเรียก)
               </th>
-              <th className="border p-1">ลำดับในตารางเวร</th>
-              <th className="border p-1">ตำแหน่ง</th>
+              <th className="border p-1">ลำดับ</th>
               <th className="border p-1">วอร์ด</th>
               {/* ✅ ใหม่ – สิทธิ์ขึ้นเวรแต่ละช่วง */}
               <th className="border p-1">เช้า</th>
               <th className="border p-1">บ่าย</th>
               <th className="border p-1">ดึก</th>
-              <th className="border p-1">ขึ้นเวร</th>
-              <th className="border p-1">นวด</th>
+              <th className="border p-1">เสาร์-อาทิตย์</th>
+              <th className="border p-1">เวรน้อยสุด</th>
+              <th className="border p-1">หยุดยืดหยุ่น</th>
+              <th className="border p-1">ขึ้นเวรพยาบาล</th>
+              <th className="border p-1">หมอนวด</th>
               <th className="border p-1">กระทำการ</th>
             </tr>
           </thead>
@@ -564,7 +615,6 @@ export default function NurseManagerPage() {
                   {n.name ? ` (${n.name})` : ""}
                 </td>
                 <td className="border p-1 text-white">{n.display_order}</td>
-                <td className="border p-1 text-white">{n.position}</td>
                 <td className="border p-1 text-white">
                   {wards.find((w) => w.id === n.ward_id)?.name || "-"}
                 </td>
@@ -579,7 +629,18 @@ export default function NurseManagerPage() {
                 <td className="border p-1 text-center">
                   {n.allow_night ? "✅" : "❌"}
                 </td>
-                
+                {/* ✅ ทำงานวันหยุดหรือไม่ */}
+                <td className="border p-1 text-center">
+                  {n.allow_weekend ? "✅" : "❌"}
+                </td>
+
+                {/* ✅ Low-priority (ให้ลงเวรหลังสุด) */}
+                <td className="border p-1 text-center">
+                  {n.low_priority ? "✅" : "❌"}
+                </td>
+                <td className="border p-1 text-center">
+                  {n.rest_flexible ? "✅" : "❌"}
+                </td>
                 <td className="border p-1 text-center">
                   {n.is_active_for_shift ? "✅" : "❌"}
                 </td>
@@ -607,6 +668,9 @@ export default function NurseManagerPage() {
                         allow_morning: n.allow_morning,
                         allow_evening: n.allow_evening,
                         allow_night: n.allow_night,
+                        allow_weekend: n.allow_weekend,
+                        low_priority: n.low_priority,
+                        rest_flexible: n.rest_flexible,
                       });
                       setEditId(n.id);
                     }}
