@@ -60,6 +60,51 @@ export default function NurseManagerPage() {
   const [editAllowWeekend, setEditAllowWeekend] = useState(true);
   const [editLowPriority, setEditLowPriority] = useState(false);
 
+  /* -----------------------------------------------------------
+   ① โหลดค่าที่เคยเซฟไว้ (รันครั้งเดียวตอน mount)
+----------------------------------------------------------- */
+  useEffect(() => {
+    const raw = localStorage.getItem("nm_filters");
+    if (!raw) return;
+
+    try {
+      const { hospital_id, ward_id } = JSON.parse(raw);
+
+      /* ถ้า user เป็น admin / head-nurse ให้ใช้ได้เลย
+       ถ้าเป็นหัวหน้าวอร์ด ให้เช็กว่า ward ตรงกับของตัวเอง */
+      if (
+        currentUser?.role === "admin" ||
+        currentUser?.user_type === "หัวหน้าพยาบาล"
+      ) {
+        hospital_id && setFilterHospitalId(hospital_id);
+        ward_id && setFilterWardId(ward_id);
+      } else if (currentUser?.user_type === "หัวหน้าวอร์ด") {
+        if (hospital_id === currentUser.hospital_id)
+          setFilterHospitalId(hospital_id);
+        if (ward_id === currentUser.ward_id) setFilterWardId(ward_id);
+      }
+    } catch (e) {
+      console.error("❌ parse nm_filters:", e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]); // รอรู้ role ก่อนค่อยใส่
+
+  /* -----------------------------------------------------------
+   ② เซฟทุกครั้งที่มีการเปลี่ยน filter
+----------------------------------------------------------- */
+  useEffect(() => {
+    /* อย่าเก็บค่า “ว่าง” ซ้ำ – เพราะจะไปทับของเดิมโดยไม่จำเป็น */
+    if (!filterHospitalId && !filterWardId) return;
+
+    localStorage.setItem(
+      "nm_filters",
+      JSON.stringify({
+        hospital_id: filterHospitalId,
+        ward_id: filterWardId,
+      })
+    );
+  }, [filterHospitalId, filterWardId]);
+
   useEffect(() => {
     const stored = localStorage.getItem("logged_in_user");
     if (stored) {
@@ -593,6 +638,7 @@ export default function NurseManagerPage() {
               <th className="border p-1">
                 ชื่อแสดงผลในตารางเวร - ชื่อเล่น (ชื่อเรียก)
               </th>
+              <th className="border p-1">กระทำการ</th>
               <th className="border p-1">ลำดับ</th>
               <th className="border p-1">วอร์ด</th>
               {/* ✅ ใหม่ – สิทธิ์ขึ้นเวรแต่ละช่วง */}
@@ -604,7 +650,6 @@ export default function NurseManagerPage() {
               <th className="border p-1">หยุดยืดหยุ่น</th>
               <th className="border p-1">ขึ้นเวรพยาบาล</th>
               <th className="border p-1">หมอนวด</th>
-              <th className="border p-1">กระทำการ</th>
             </tr>
           </thead>
           <tbody>
@@ -613,39 +658,6 @@ export default function NurseManagerPage() {
                 <td className="border p-1 text-white">
                   {n.display_name}
                   {n.name ? ` (${n.name})` : ""}
-                </td>
-                <td className="border p-1 text-white">{n.display_order}</td>
-                <td className="border p-1 text-white">
-                  {wards.find((w) => w.id === n.ward_id)?.name || "-"}
-                </td>
-
-                {/* ✅ ใหม่ – โชว์สิทธิ์ขึ้นเวร */}
-                <td className="border p-1 text-center">
-                  {n.allow_morning ? "✅" : "❌"}
-                </td>
-                <td className="border p-1 text-center">
-                  {n.allow_evening ? "✅" : "❌"}
-                </td>
-                <td className="border p-1 text-center">
-                  {n.allow_night ? "✅" : "❌"}
-                </td>
-                {/* ✅ ทำงานวันหยุดหรือไม่ */}
-                <td className="border p-1 text-center">
-                  {n.allow_weekend ? "✅" : "❌"}
-                </td>
-
-                {/* ✅ Low-priority (ให้ลงเวรหลังสุด) */}
-                <td className="border p-1 text-center">
-                  {n.low_priority ? "✅" : "❌"}
-                </td>
-                <td className="border p-1 text-center">
-                  {n.rest_flexible ? "✅" : "❌"}
-                </td>
-                <td className="border p-1 text-center">
-                  {n.is_active_for_shift ? "✅" : "❌"}
-                </td>
-                <td className="border p-1 text-center">
-                  {n.is_active_for_massage ? "✅" : "❌"}
                 </td>
                 <td className="border p-1 text-center space-x-2">
                   <button
@@ -691,6 +703,39 @@ export default function NurseManagerPage() {
                       📅 วันหยุด
                     </button>
                   </Link>
+                </td>
+                <td className="border p-1 text-white">{n.display_order}</td>
+                <td className="border p-1 text-white">
+                  {wards.find((w) => w.id === n.ward_id)?.name || "-"}
+                </td>
+
+                {/* ✅ ใหม่ – โชว์สิทธิ์ขึ้นเวร */}
+                <td className="border p-1 text-center">
+                  {n.allow_morning ? "✅" : "❌"}
+                </td>
+                <td className="border p-1 text-center">
+                  {n.allow_evening ? "✅" : "❌"}
+                </td>
+                <td className="border p-1 text-center">
+                  {n.allow_night ? "✅" : "❌"}
+                </td>
+                {/* ✅ ทำงานวันหยุดหรือไม่ */}
+                <td className="border p-1 text-center">
+                  {n.allow_weekend ? "✅" : "❌"}
+                </td>
+
+                {/* ✅ Low-priority (ให้ลงเวรหลังสุด) */}
+                <td className="border p-1 text-center">
+                  {n.low_priority ? "✅" : "❌"}
+                </td>
+                <td className="border p-1 text-center">
+                  {n.rest_flexible ? "✅" : "❌"}
+                </td>
+                <td className="border p-1 text-center">
+                  {n.is_active_for_shift ? "✅" : "❌"}
+                </td>
+                <td className="border p-1 text-center">
+                  {n.is_active_for_massage ? "✅" : "❌"}
                 </td>
               </tr>
             ))}

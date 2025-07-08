@@ -8,6 +8,7 @@ import Link from "next/link";
 import { toast } from "react-toastify";
 import Swal from "sweetalert2";
 import { useRouter } from "next/router";
+import * as XLSX from "xlsx";
 import {
   DEFAULT_HOSPITAL_ID,
   DEFAULT_WARD_ID,
@@ -460,7 +461,29 @@ function ShiftPlanner() {
         holidayMap[row.nurse_id].add(d);
       });
 
+      console.log("📆 [DEBUG] โหลดวันลาพยาบาลจาก DB:", data);
+      console.log("📆 [DEBUG] nurseHolidays (holidayMap):", holidayMap);
+
+      setStatusMessage(
+        `[DEBUG] โหลดวันลาพยาบาล: ${JSON.stringify(holidayMap)}`
+      );
       setNurseHolidays(holidayMap);
+      // LOG: รายชื่อพยาบาลและวันลาที่โหลดได้
+      if (nurseList && nurseList.length > 0) {
+        console.log("[LOG] รายชื่อพยาบาลและวันลาที่โหลดจาก DB:");
+        Object.entries(holidayMap).forEach(([nurseId, daysSet]) => {
+          const nurse = nurseList.find((n) => n.id === nurseId);
+          const name = nurse?.display_name || nurse?.name || nurseId;
+          const daysArr = Array.from(daysSet);
+          console.log(`- ${name}:`, daysArr.join(", "));
+        });
+      } else {
+        console.log(
+          "[LOG] (ยังไม่มี nurseList, จะแสดงวันลาหลัง nurseList โหลด)"
+        );
+      }
+
+      console.log("✅ [DEBUG] setNurseHolidays:", holidayMap);
     };
 
     loadHolidays();
@@ -685,6 +708,13 @@ function ShiftPlanner() {
           if (remain[n.id] === 0) continue;
           if (isWeekend(day) && !n.allow_weekend) continue;
 
+          // 🚫 หยุดตรงนี้ถ้าวันนี้เป็นวันหยุดของพยาบาล n
+          const ymd = `${yearMonth}-${String(day).padStart(2, "0")}`;
+          const isHoliday =
+            nurseHolidays?.[n.id]?.has?.(ymd) ||
+            nurseHolidays?.[n.id]?.includes?.(ymd); // เผื่อเป็น Set หรือ Array
+          if (isHoliday) continue;
+
           const want = PATTERN[(day - 1 + offsets[n.id]) % LEN];
           if (!want) continue;
           if (!n[`allow_${want}`]) continue;
@@ -705,13 +735,18 @@ function ShiftPlanner() {
         if (need <= 0) continue;
 
         /* เรียงคนที่เหลือ quota มาก → น้อย, non-lowPri ก่อน */
+        const ymd = `${yearMonth}-${String(day).padStart(2, "0")}`;
         const cand = [...nurseList]
           .filter(
             (n) =>
               remain[n.id] > 0 &&
               (!isWeekend(day) || n.allow_weekend) &&
               n[`allow_${shift}`] &&
-              !assignments[n.id][day]?.[shift]
+              !assignments[n.id][day]?.[shift] &&
+              !(
+                nurseHolidays?.[n.id]?.has?.(ymd) ||
+                nurseHolidays?.[n.id]?.includes?.(ymd)
+              )
           )
           .sort((a, b) => {
             /* 1) เหลือ quota มากก่อน */
@@ -750,8 +785,15 @@ function ShiftPlanner() {
 
     const newAssignments = { ...assignments };
 
-    // ตรวจสอบ holiday
-    if (nurseHolidays?.[nurseId]?.has?.(dateKey)) {
+    // ตรวจสอบ holiday หรือ disabled ใน assignments (กันกดเวรในวันลา)
+    if (
+      nurseHolidays?.[nurseId]?.has?.(dateKey) ||
+      assignments[nurseId]?.[day]?.[shift]?.disabled
+    ) {
+      console.log(
+        `[DEBUG] [toggleShift] BLOCKED: nurseId=${nurseId}, day=${day}, shift=${shift}, dateKey=${dateKey}, nurseHolidays=`,
+        nurseHolidays[nurseId]
+      );
       toast.warning(`⛔ วันที่ ${day}/${month} เป็นวันลางาน`);
       return;
     }
@@ -937,7 +979,6 @@ function ShiftPlanner() {
 
     fetchHospitalsAndWards();
   }, []);
-
   const fetchNurseList = async (hId = hospitalId, wId = wardId) => {
     if (!hId || !wId) return;
 
@@ -971,18 +1012,16 @@ function ShiftPlanner() {
     const endDate = `${year}-${String(month).padStart(2, "0")}-${String(
       daysInMonth
     ).padStart(2, "0")}`;
+    console.log("[DEBUG] startDate:", startDate, "endDate:", endDate);
 
-    const { data: holidays, error: holidayError } = await supabase
-      .from("nurse_holidays")
-      .select("nurse_id, date, type")
-      .gte("date", startDate)
-      .lte("date", endDate);
+    // 🟠 ใช้ nurseHolidays ที่ global state แทน ไม่ query DB ซ้ำ
+    const nurseHolidayMap = nurseHolidays;
+    console.log(
+      "[DEBUG] ใช้ nurseHolidayMap (จาก global state):",
+      nurseHolidayMap
+    );
 
-    if (holidayError) {
-      console.error("Fetch holidays error:", holidayError);
-      toast.error("ไม่สามารถโหลดวันลาพยาบาลได้");
-      return;
-    }
+    console.log("📆 [DEBUG] โหลดวันลาจาก nurse_holidays:", nurseHolidayMap);
 
     const assignmentsInit = {};
     for (const nurse of nurses) {
@@ -993,29 +1032,35 @@ function ShiftPlanner() {
         const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(
           d
         ).padStart(2, "0")}`;
-        const holiday = holidays.find(
-          (h) => h.nurse_id === nurseId && h.date === dateStr
-        );
-
+        // 🟡 ใช้ nurseHolidayMap แทน holidays
+        const isHoliday =
+          nurseHolidayMap?.[nurseId]?.has?.(dateStr) ||
+          nurseHolidayMap?.[nurseId]?.includes?.(dateStr);
         assignmentsInit[nurseId][d] = {
           morning: {
             value: false,
-            disabled: !!holiday,
-            reason: holiday ? holiday.type : null,
+            disabled: !!isHoliday,
+            reason: isHoliday ? "ลางาน" : null,
           },
           evening: {
             value: false,
-            disabled: !!holiday,
-            reason: holiday ? holiday.type : null,
+            disabled: !!isHoliday,
+            reason: isHoliday ? "ลางาน" : null,
           },
           night: {
             value: false,
-            disabled: !!holiday,
-            reason: holiday ? holiday.type : null,
+            disabled: !!isHoliday,
+            reason: isHoliday ? "ลางาน" : null,
           },
         };
+        if (isHoliday) {
+          console.log(
+            `[DEBUG] ลา: nurse=${nurseMap[nurseId] || nurseId}, วัน=${dateStr}`
+          );
+        }
       }
     }
+    console.log("[DEBUG] assignmentsInit หลัง mark วันลา:", assignmentsInit);
 
     const sortedNurses = [...nurses].sort((a, b) => {
       const aOrder = a.display_order ?? 9999;
@@ -1025,11 +1070,26 @@ function ShiftPlanner() {
 
     setNurseList(sortedNurses);
     setAssignments(assignmentsInit);
+
+    // [LOG] รายชื่อพยาบาล+วันลา แบบแน่นอนหลัง nurseList ถูกโหลด
+    if (nurseHolidayMap && sortedNurses.length > 0) {
+      console.log("[LOG] [Final] รายชื่อพยาบาลและวันลาหลัง nurseList โหลด:");
+      Object.entries(nurseHolidayMap).forEach(([nurseId, daysSet]) => {
+        const nurse = sortedNurses.find((n) => n.id === nurseId);
+        const name = nurse?.display_name || nurse?.name || nurseId;
+        const daysArr = Array.from(daysSet);
+        console.log(`- ${name}: ${daysArr.join(", ")}`);
+      });
+    }
+
+    console.log("✅ [DEBUG] setAssignments (holiday):", assignmentsInit);
     console.log(
       "📋 [DEBUG] assignments หลังจาก fetchNurseList:",
       assignmentsInit
     );
-    setStatusMessage(`♻️ จัดเวรใหม่: ${sortedNurses.length} คน`);
+    setStatusMessage(
+      `[DEBUG] assignmentsInit (holiday): ${JSON.stringify(assignmentsInit)}`
+    );
     return true;
   };
 
@@ -1148,6 +1208,34 @@ function ShiftPlanner() {
       setAssignments(newAssignments);
       toast.success("✅ อัปเดตเวรเรียบร้อย");
     });
+  };
+  const exportToExcel = () => {
+    // header
+    const ws_data = [
+      [
+        "ชื่อพยาบาล",
+        ...Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString()),
+      ],
+    ];
+
+    nurseList.forEach((nurse) => {
+      const row = [nurse.display_name || nurse.name];
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dayObj = assignments[nurse.id]?.[d] || {};
+        let txt = "";
+        if (dayObj.morning?.value) txt += "ช";
+        if (dayObj.evening?.value) txt += "บ";
+        if (dayObj.night?.value) txt += "ด";
+        row.push(txt || "-");
+      }
+      ws_data.push(row);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(ws_data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "ตารางเวร");
+    const fileName = `ตารางเวร_${yearMonth}.xlsx`;
+    XLSX.writeFile(wb, fileName);
   };
 
   return (
@@ -1814,6 +1902,12 @@ function ShiftPlanner() {
               >
                 🆕 บันทึกเป็นตารางเวรใหม่
               </button>
+              <button
+                onClick={exportToExcel}
+                className="bg-green-600 text-white px-4 py-1 rounded ml-2"
+              >
+                📥 Export Excel
+              </button>
             </>
           )}
         </div>
@@ -1846,20 +1940,66 @@ function ShiftPlanner() {
                   const dateKey = `${yearMonth}-${day
                     .toString()
                     .padStart(2, "0")}`;
-                  const assigned = assignments[dateKey]?.[nurse.id] || [];
+                  const weekday = dayjs(dateKey).day();
+                  const isSaturday = weekday === 6;
+                  const isSunday = weekday === 0;
+                  const isPersonalHoliday =
+                    (nurseHolidays?.[nurse.id] &&
+                      (nurseHolidays[nurse.id] instanceof Set
+                        ? nurseHolidays[nurse.id].has(dateKey)
+                        : Array.isArray(nurseHolidays[nurse.id])
+                        ? nurseHolidays[nurse.id].includes(dateKey)
+                        : false)) ||
+                    false;
+
+                  if (isPersonalHoliday) {
+                    console.log(
+                      `[LOG] [Render] Cell ปิดเวร: ${
+                        nurse.display_name || nurse.name || nurse.id
+                      } | วันลา: ${dateKey}`
+                    );
+                  }
+
+                  if (isPersonalHoliday) {
+                    const nurseName =
+                      nurse.display_name || nurse.name || nurse.id;
+                    console.log(
+                      `[LOG] [Render] ปิด cell: ${nurseName} | วันลา: ${dateKey}`
+                    );
+                  }
+
+                  const isWeekend = isSaturday || isSunday;
+                  const isBlockedByWeekendRule =
+                    isWeekend && nurse.allow_weekend === false;
+
                   return (
                     <td
                       key={dayIndex}
-                      className="border px-1 py-1 text-center text-black"
+                      className={`border px-1 py-1 text-center text-sm min-w-[36px] ${
+                        isPersonalHoliday
+                          ? "bg-red-100 text-gray-400 cursor-not-allowed"
+                          : isSaturday
+                          ? "bg-violet-200"
+                          : isSunday
+                          ? "bg-violet-300"
+                          : ""
+                      }`}
                     >
                       {shifts.map((shift) => {
                         const dayObj = assignments[nurse.id]?.[day] || {};
                         const isAssigned = dayObj?.[shift]?.value === true;
-                        const isHoliday =
-                          nurseHolidays?.[nurse.id]?.has?.(dateKey);
+                        const isShiftNotAllowed =
+                          nurse[`allow_${shift}`] === false;
+                        // **Fix: วันลา = disabled ทุก shift**
+                        const isHolidayShift =
+                          isPersonalHoliday || dayObj?.[shift]?.disabled;
+                        const isBlockedShift =
+                          isHolidayShift ||
+                          isBlockedByWeekendRule ||
+                          isShiftNotAllowed;
 
-                        const bgColor = isHoliday
-                          ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                        const bgColor = isBlockedShift
+                          ? "bg-gray-300 text-gray-400 cursor-not-allowed"
                           : isAssigned
                           ? shift === "morning"
                             ? "bg-blue-300"
@@ -1868,23 +2008,46 @@ function ShiftPlanner() {
                             : "bg-purple-300"
                           : "bg-gray-100";
 
+                        let tooltip = "";
+                        if (isHolidayShift)
+                          tooltip = dayObj?.[shift]?.reason || "ลางาน";
+                        else if (isBlockedByWeekendRule)
+                          tooltip = "ห้ามขึ้นเวรวันหยุด";
+                        else if (isShiftNotAllowed)
+                          tooltip = "พยาบาลนี้ไม่ได้รับอนุญาตขึ้นเวรนี้";
+
                         return (
                           <div
                             key={shift}
                             onClick={() => {
+                              // 🚫 ถ้าวันลา หรือ disabled = ห้ามคลิกเด็ดขาด
+                              if (isHolidayShift) {
+                                console.log(
+                                  `[LOG] [CLICK BLOCKED] คลิก cell วันลา: ${
+                                    nurse.display_name || nurse.name || nurse.id
+                                  }, ${dateKey}, shift=${shift}`
+                                );
+                                toast.warn(
+                                  `⛔ วันที่นี้ (${day}/${month}) พยาบาลลางาน`
+                                );
+                                return;
+                              }
                               if (!canEdit) return;
-                              if (!isHoliday) toggleShift(nurse, day, shift);
+                              if (isBlockedShift) return;
+                              toggleShift(nurse, day, shift);
                             }}
                             className={`text-sm rounded px-1 mb-0.5 ${bgColor} ${
-                              canEdit && !isHoliday
+                              canEdit && !isBlockedShift && !isHolidayShift
                                 ? "cursor-pointer"
-                                : "cursor-default"
+                                : "cursor-not-allowed"
                             }`}
-                            title={isHoliday ? "ลางาน" : ""}
+                            title={tooltip}
                           >
                             {isAssigned ? (
                               <div className="flex items-center justify-between gap-1">
-                                <span>{shiftLabels[shift]}</span>
+                                <span className="text-black">
+                                  {shiftLabels[shift]}
+                                </span>
                                 <button
                                   className="text-xs text-gray-600 hover:text-blue-700"
                                   onClick={(e) => {
@@ -1901,7 +2064,9 @@ function ShiftPlanner() {
                                 </button>
                               </div>
                             ) : (
-                              shiftLabels[shift]
+                              <span className="text-black">
+                                {shiftLabels[shift]}
+                              </span>
                             )}
                           </div>
                         );

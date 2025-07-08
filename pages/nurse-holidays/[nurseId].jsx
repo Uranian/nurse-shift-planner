@@ -18,41 +18,77 @@ export default function NurseHolidaysPage() {
   const [nurse, setNurse] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const leaveTypes = ["ลาป่วย", "ลากิจ", "ลาพักร้อน", "อบรม"];
+  /* === กำหนดชนิดวันลา (value เก็บลง DB, label/สี แสดงบนจอ) === */
+  /* =========================================================
+   1) ENUM วันลา  – ใส่ค่าว่าง (null) นำหน้าไว้ก่อน
+   ========================================================= */
+  const LEAVE_TYPES = [
+    { value: null, label: "— ไม่ลา —", color: "bg-white" },
+    { value: "ลาป่วย", label: "ลาป่วย", color: "bg-red-200" },
+    { value: "ลากิจ", label: "ลากิจ", color: "bg-yellow-200" },
+    { value: "ลาพักร้อน", label: "ลาพักร้อน", color: "bg-green-200" },
+    { value: "ลาอบรม", label: "ลาอบรม", color: "bg-blue-200" },
+  ];
+
   const [notes, setNotes] = useState({}); // ⬅️ เก็บรายละเอียดแต่ละวันที่ key = date
 
   // 🔥 เอา Swal ออกจาก toggleDate
+  /* === toggleDate – หมุนประเภทวันลา === */
+  /* =========================================================
+   2) toggleDate – หมุนสถานะ + ถ้าได้ค่าว่างให้ “ยกเลิก” (ลบ key)
+   ========================================================= */
   const toggleDate = (dateStr) => {
     setSelectedDates((prev) => {
-      const existing = prev[dateStr];
-      const nextType =
-        leaveTypes[(leaveTypes.indexOf(existing) + 1) % leaveTypes.length] ||
-        leaveTypes[0];
-      return { ...prev, [dateStr]: nextType };
+      /* หา index ของสถานะปัจจุบัน (ถ้า undefined ถือว่า index = -1) */
+      const curIdx = LEAVE_TYPES.findIndex(
+        (t) => t.value === (dateStr in prev ? prev[dateStr] : null)
+      );
+      /* สถานะถัดไปในวงรอบ */
+      const nextVal = LEAVE_TYPES[(curIdx + 1) % LEAVE_TYPES.length].value;
+
+      /* ── กรณี “ไม่ลา” → ลบ key ทิ้ง ────────────────────── */
+      if (nextVal === null) {
+        const { [dateStr]: _omit, ...rest } = prev; // ลบ field
+        return rest;
+      }
+
+      /* ── กรณีอื่น → เซตค่าปกติ ─────────────────────────── */
+      return { ...prev, [dateStr]: nextVal };
     });
   };
 
   const saveHolidays = async () => {
     setLoading(true);
-    await supabase
+
+    await supabase // ลบของเก่า
       .from("nurse_holidays")
       .delete()
       .eq("nurse_id", nurseId)
       .eq("year", year);
-    const inserts = Object.entries(selectedDates).map(([date, type]) => ({
+
+    const rows = Object.entries(selectedDates).map(([date, type]) => ({
       nurse_id: nurseId,
       date,
       year,
       type,
       note: notes[date] || null,
     }));
-    if (inserts.length > 0) {
-      await supabase.from("nurse_holidays").insert(inserts);
+
+    let error = null;
+    if (rows.length) {
+      const res = await supabase.from("nurse_holidays").insert(rows);
+      error = res.error;
     }
+
     setLoading(false);
-    toast.success("บันทึกวันหยุดแล้ว", {
-      autoClose: 2000,
-    });
+
+    if (error) {
+      console.error(error);
+      toast.error("เกิดข้อผิดพลาดในการบันทึก");
+    } else {
+      toast.success("✅ บันทึกวันหยุดแล้ว", { autoClose: 2000 });
+      loadExisting(); // รีโหลดให้เห็นข้อมูลใหม่
+    }
   };
 
   const loadExisting = async () => {
@@ -88,6 +124,14 @@ export default function NurseHolidaysPage() {
     setNurse(data);
   };
 
+  function getMonthGrid(daysArr) {
+    if (!daysArr.length) return [];
+    const first = daysArr[0];
+    // dayjs().day(): 0 = อาทิตย์, 1 = จันทร์ ... 6 = เสาร์
+    const prefix = (first.day() + 6) % 7; // 0=จันทร์, ..., 6=อาทิตย์
+    return [...Array(prefix).fill(null), ...daysArr];
+  }
+
   const daysInYear = [];
   const start = dayjs(`${year}-01-01`);
   for (let i = 0; i < 365 + 1; i++) {
@@ -115,10 +159,11 @@ export default function NurseHolidaysPage() {
       setNotes((prev) => ({ ...prev, [dateStr]: note }));
     }
   };
-  
+
   const showMonthlyNotes = (days) => {
     const entries = days
       .map((d) => {
+        if (!d) return null;
         const dateStr = d.format("YYYY-MM-DD");
         const note = notes[dateStr];
         return note ? `${dateStr} – ${note}` : null;
@@ -175,7 +220,7 @@ export default function NurseHolidaysPage() {
             <div className="w-4 h-4 bg-green-200 border" /> ลาพักร้อน
           </div>
           <div className="flex items-center gap-1">
-            <div className="w-4 h-4 bg-blue-200 border" /> อบรม
+            <div className="w-4 h-4 bg-blue-200 border" /> ลาอบรม
           </div>
         </div>
       </div>
@@ -185,8 +230,9 @@ export default function NurseHolidaysPage() {
           {Array.from({ length: 12 }, (_, i) =>
             String(i + 1).padStart(2, "0")
           ).map((month) => {
-            const days = groupedByMonth[month] || [];
-            if (days.length === 0) return null;
+            const daysRaw = groupedByMonth[month] || [];
+            if (daysRaw.length === 0) return null;
+            const days = getMonthGrid(daysRaw);
 
             return (
               <div key={month} className="mb-6">
@@ -195,28 +241,45 @@ export default function NurseHolidaysPage() {
                   {year + 543}
                 </h2>
                 <div className="grid grid-cols-7 gap-2 sm:gap-3">
-                  {days.map((d) => {
+                  {/* Header ชื่อวัน */}
+                  {["จ", "อ", "พ", "พฤ", "ศ", "ส", "อา"].map((wd) => (
+                    <div
+                      key={wd}
+                      className="text-center font-semibold text-gray-600 bg-gray-50 rounded"
+                    >
+                      {wd}
+                    </div>
+                  ))}
+                  {days.map((d, idx) => {
+                    if (!d) return <div key={`pad-${idx}`} />;
                     const dateStr = d.format("YYYY-MM-DD");
                     const label = d.format("D");
                     const selectedType = selectedDates[dateStr];
                     const noteText = notes[dateStr];
+                    const leaveInfo = LEAVE_TYPES.find(
+                      (t) => t.value === selectedType
+                    );
+                    const weekday = d.day();
+                    const isSaturday = weekday === 6;
+                    const isSunday = weekday === 0;
 
                     return (
                       <div
                         key={dateStr}
                         onClick={() => toggleDate(dateStr)}
-                        className={`relative border w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center text-sm sm:text-base cursor-pointer rounded text-center ${
-                          selectedType === "ลาป่วย"
-                            ? "bg-red-200"
-                            : selectedType === "ลากิจ"
-                            ? "bg-yellow-200"
-                            : selectedType === "ลาพักร้อน"
-                            ? "bg-green-200"
-                            : selectedType === "อบรม"
-                            ? "bg-blue-200"
-                            : "bg-white"
-                        }`}
-                        title={selectedType || ""}
+                        className={`relative border w-10 h-10 sm:w-12 sm:h-12 flex items-center
+          justify-center text-sm sm:text-base cursor-pointer rounded
+          ${
+            leaveInfo && leaveInfo.color !== "bg-white"
+              ? leaveInfo.color
+              : isSaturday
+              ? "bg-violet-200"
+              : isSunday
+              ? "bg-violet-300"
+              : "bg-white"
+          }
+        `}
+                        title={leaveInfo ? leaveInfo.label : ""}
                       >
                         {label}
                         <div
@@ -235,7 +298,8 @@ export default function NurseHolidaysPage() {
                     );
                   })}
                 </div>
-                {days.some((d) => notes[d.format("YYYY-MM-DD")]) && (
+
+                {days.some((d) => d && notes[d.format("YYYY-MM-DD")]) && (
                   <button
                     className="mt-2 text-xs text-orange-700 underline"
                     onClick={() => showMonthlyNotes(days)}
