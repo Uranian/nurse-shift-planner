@@ -18,6 +18,50 @@ import {
 import "dayjs/locale/th";
 dayjs.locale("th");
 
+// 👇 Merge assignments โดยคงวันแรกๆ ตามที่กำหนด
+function mergeAssignmentsPreserveDays(
+  oldAssign,
+  newAssign,
+  preserveDays = [1, 2]
+) {
+  const merged = { ...newAssign };
+  Object.keys(oldAssign).forEach((nurseId) => {
+    if (!merged[nurseId]) merged[nurseId] = {};
+    preserveDays.forEach((day) => {
+      if (oldAssign[nurseId]?.[day]) {
+        // Copy shift-level detail (เช้า/บ่าย/ดึก) จาก oldAssign มาทับทุก shift ในวันนั้น
+        merged[nurseId][day] = { ...oldAssign[nurseId][day] };
+      }
+    });
+  });
+  return merged;
+}
+function markHolidaysDisabled(assignments, nurseHolidays, year, month) {
+  const daysInMonth = dayjs(`${year}-${month}-01`).daysInMonth();
+  const yearMonth = dayjs(`${year}-${month}-01`).format("YYYY-MM");
+  for (const nurseId of Object.keys(assignments)) {
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${yearMonth}-${String(d).padStart(2, "0")}`;
+      const isHoliday =
+        nurseHolidays?.[nurseId]?.has?.(dateStr) ||
+        (Array.isArray(nurseHolidays?.[nurseId]) &&
+          nurseHolidays[nurseId].includes(dateStr));
+      if (isHoliday) {
+        if (!assignments[nurseId][d]) assignments[nurseId][d] = {};
+        for (const s of ["morning", "evening", "night"]) {
+          assignments[nurseId][d][s] = {
+            ...(assignments[nurseId][d][s] || {}),
+            value: false,
+            disabled: true,
+            reason: "ลางาน",
+          };
+        }
+      }
+    }
+  }
+  return assignments;
+}
+
 const shifts = ["morning", "evening", "night"];
 const shiftLabels = {
   morning: "เช้า",
@@ -571,7 +615,7 @@ function ShiftPlanner() {
         /* 👉 ไม่มีเวรเก่า → เริ่มจากแถวว่างทุกคน */
         const blank = {};
         nurseList.forEach((n) => (blank[n.id] = {}));
-        setAssignments(blank);
+        setAssignments(markHolidaysDisabled(blank, nurseHolidays, year, month));
         setStatusMessage("🆕 ไม่มีข้อมูลเก่าในเดือนนี้");
         return;
       }
@@ -803,6 +847,103 @@ function ShiftPlanner() {
     return assignments;
   }
 
+  function assignEqualShift(skipFirstDays = 0) {
+    const maxPerShift = {
+      morning: wardConfig?.max_morning_shift_per_day ?? 4,
+      evening: wardConfig?.max_evening_shift_per_day ?? 3,
+      night: wardConfig?.max_night_shift_per_day ?? 3,
+    };
+    const minRestDays =
+      Array.isArray(wardConfig?.month_rest_days) &&
+      wardConfig.month_rest_days.length === 12
+        ? wardConfig.month_rest_days[month - 1]
+        : 8;
+
+    const SHIFTS = ["morning", "evening", "night"];
+    const isWeekend = (d) =>
+      [0, 6].includes(
+        dayjs(
+          `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(
+            2,
+            "0"
+          )}`
+        ).day()
+      );
+
+    // 2. เตรียม assignment และ remain
+    const assignments = {};
+    const remain = {};
+    nurseList.forEach((n) => {
+      assignments[n.id] = {};
+      // quota ต่อเดือน
+      const mustRest = n.rest_flexible ? 0 : minRestDays;
+      remain[n.id] = Math.max(0, daysInMonth - mustRest);
+    });
+
+    // 3. ลูปวัน
+    for (let day = 1 + skipFirstDays; day <= daysInMonth; day++) {
+      const used = { morning: 0, evening: 0, night: 0 };
+
+      for (const shift of SHIFTS) {
+        const max = maxPerShift[shift];
+        let assignedToday = 0;
+
+        // สุ่มลำดับ nurse
+        const shuffledNurses = [...nurseList].sort(() => Math.random() - 0.5);
+
+        for (const nurse of shuffledNurses) {
+          if (assignedToday >= max) break;
+          if (remain[nurse.id] === 0) continue;
+
+          // เช็ควันหยุด/ลา
+          const ymd = `${yearMonth}-${String(day).padStart(2, "0")}`;
+          const isHoliday =
+            nurseHolidays?.[nurse.id]?.has?.(ymd) ||
+            nurseHolidays?.[nurse.id]?.includes?.(ymd);
+          if (isHoliday) continue;
+
+          // เช็ค allow เวร
+          if (!nurse[`allow_${shift}`]) continue;
+          if (isWeekend(day) && !nurse.allow_weekend) continue;
+
+          // เช็คห้ามเวรต่อเนื่อง
+          if (
+            shift === "night" &&
+            wardConfig?.rule_no_evening_to_night &&
+            day > 1
+          ) {
+            const prev = assignments[nurse.id]?.[day - 1];
+            if (prev?.evening?.value) continue;
+          }
+          if (
+            shift === "morning" &&
+            wardConfig?.rule_no_night_to_morning &&
+            day > 1
+          ) {
+            const prev = assignments[nurse.id]?.[day - 1];
+            if (prev?.night?.value) continue;
+          }
+
+          // เช็คว่ายังไม่มีเวรอื่นวันนี้
+          const todayAssign = assignments[nurse.id]?.[day] || {};
+          let hasShift = false;
+          for (const s of SHIFTS) {
+            if (todayAssign[s]?.value) hasShift = true;
+          }
+          if (hasShift) continue;
+
+          // แจกเวร
+          assignments[nurse.id][day] = assignments[nurse.id][day] || {};
+          assignments[nurse.id][day][shift] = { value: true };
+          used[shift] += 1;
+          remain[nurse.id] -= 1;
+          assignedToday++;
+        }
+      }
+    }
+    return assignments;
+  }
+
   function toggleShift(nurse, day, shift) {
     // 1) ถ้าพยาบาลไม่อนุญาตเวรนี้ → เตือนแล้วออก
     if (!nurse[`allow_${shift}`]) {
@@ -889,7 +1030,9 @@ function ShiftPlanner() {
     // toggle shift
     shiftData.value = !shiftData.value;
     newAssignments[nurseId][day][shift] = shiftData;
-    setAssignments(newAssignments);
+    setAssignments(
+      markHolidaysDisabled(newAssignments, nurseHolidays, year, month)
+    );
   }
 
   const saveToSupabase = async (optionalPlanName) => {
@@ -1099,7 +1242,9 @@ function ShiftPlanner() {
     });
 
     setNurseList(sortedNurses);
-    setAssignments(assignmentsInit);
+    setAssignments(
+      markHolidaysDisabled(assignmentsInit, nurseHolidays, year, month)
+    );
 
     // [LOG] รายชื่อพยาบาล+วันลา แบบแน่นอนหลัง nurseList ถูกโหลด
     if (nurseHolidayMap && sortedNurses.length > 0) {
@@ -1178,7 +1323,10 @@ function ShiftPlanner() {
       });
     }
 
-    setAssignments(newAssignments);
+    setAssignments(
+      markHolidaysDisabled(newAssignments, nurseHolidays, year, month)
+    );
+
     setPlanId(planId);
   };
 
@@ -1235,7 +1383,10 @@ function ShiftPlanner() {
         value: true,
       };
 
-      setAssignments(newAssignments);
+      setAssignments(
+        markHolidaysDisabled(newAssignments, nurseHolidays, year, month)
+      );
+
       toast.success("✅ อัปเดตเวรเรียบร้อย");
     });
   };
@@ -1746,7 +1897,14 @@ function ShiftPlanner() {
                   }
 
                   const newAssignments = buildAutoAssignments();
-                  setAssignments(newAssignments);
+                  setAssignments(
+                    markHolidaysDisabled(
+                      newAssignments,
+                      nurseHolidays,
+                      year,
+                      month
+                    )
+                  );
 
                   /* ---- ทำสรุปเพื่อแสดง/คัดลอก (REST version) ------------------ */
                   const summaryDaily = [];
@@ -1839,10 +1997,251 @@ function ShiftPlanner() {
                 }}
                 className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 ml-2"
               >
-                🤖🎲 จัดเวรอัตโนมัติ 🪄🧠
+                🤖🎲 1. จัดเวรอัตโนมัติ 🪄🧠
+                <span className="block text-xs mt-1 text-indigo-200 font-normal">
+                  (ช,ช,พัก,พัก,บ,บ,ด,ด,พัก,พัก)
+                </span>
               </button>
             )}
 
+          {(["admin"].includes(userRole) ||
+            ["หัวหน้าพยาบาล", "หัวหน้าวอร์ด"].includes(
+              currentUser?.user_type
+            )) &&
+            editingPlan && (
+              <button
+                onClick={() => {
+                  if (!nurseList.length) {
+                    toast.error("⚠️ ยังไม่มีรายชื่อพยาบาลในวอร์ดนี้");
+                    return;
+                  }
+
+                  // ปุ่ม 2: เว้น 2 วันแรก
+                  const newAssignments = assignEqualShift(2);
+                  setAssignments(
+                    markHolidaysDisabled(
+                      mergeAssignmentsPreserveDays(
+                        assignments,
+                        newAssignments,
+                        [1, 2]
+                      ),
+                      nurseHolidays,
+                      year,
+                      month
+                    )
+                  );
+
+                  // ---- สรุปเวรเหมือนปุ่ม 1 ----
+                  const summaryDaily = [];
+                  const summaryNurse = [];
+                  let missM = 0,
+                    missE = 0,
+                    missN = 0;
+
+                  const maxPerShift = {
+                    morning: wardConfig?.max_morning_shift_per_day ?? 4,
+                    evening: wardConfig?.max_evening_shift_per_day ?? 3,
+                    night: wardConfig?.max_night_shift_per_day ?? 3,
+                  };
+
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    const list = { morning: [], evening: [], night: [] };
+
+                    nurseList.forEach((n) => {
+                      const d = newAssignments[n.id]?.[day];
+                      if (d?.morning?.value) list.morning.push(n.display_name);
+                      if (d?.evening?.value) list.evening.push(n.display_name);
+                      if (d?.night?.value) list.night.push(n.display_name);
+                    });
+
+                    const cM = list.morning.length,
+                      cE = list.evening.length,
+                      cN = list.night.length;
+                    const needM = Math.max(0, maxPerShift.morning - cM);
+                    const needE = Math.max(0, maxPerShift.evening - cE);
+                    const needN = Math.max(0, maxPerShift.night - cN);
+
+                    missM += needM;
+                    missE += needE;
+                    missN += needN;
+
+                    const dateStr = `${year}-${String(month).padStart(
+                      2,
+                      "0"
+                    )}-${String(day).padStart(2, "0")}`;
+                    summaryDaily.push(
+                      `📅 ${dateStr}
+- เช้า  (${cM}/${maxPerShift.morning})${needM ? ` ขาด ${needM}` : ""}: ${
+                        cM ? list.morning.join(", ") : "-"
+                      }
+- บ่าย (${cE}/${maxPerShift.evening})${needE ? ` ขาด ${needE}` : ""}: ${
+                        cE ? list.evening.join(", ") : "-"
+                      }
+- ดึก  (${cN}/${maxPerShift.night})${needN ? ` ขาด ${needN}` : ""}: ${
+                        cN ? list.night.join(", ") : "-"
+                      }`
+                    );
+                  }
+
+                  nurseList.forEach((n) => {
+                    let m = 0,
+                      e = 0,
+                      ni = 0;
+                    for (let d = 1; d <= daysInMonth; d++) {
+                      const a = newAssignments[n.id]?.[d] || {};
+                      if (a.morning?.value) m++;
+                      if (a.evening?.value) e++;
+                      if (a.night?.value) ni++;
+                    }
+                    const rest = daysInMonth - (m + e + ni);
+                    summaryNurse.push(
+                      `- ${n.display_name}: เช้า ${m} | บ่าย ${e} | ดึก ${ni} | พัก ${rest}`
+                    );
+                  });
+
+                  const missingLines = [];
+                  if (missM) missingLines.push(`- เช้า  : ${missM} เวร`);
+                  if (missE) missingLines.push(`- บ่าย : ${missE} เวร`);
+                  if (missN) missingLines.push(`- ดึก  : ${missN} เวร`);
+
+                  setSummaryText(
+                    summaryDaily.join("\n\n") +
+                      `\n\n👩‍⚕️ สรุปรายพยาบาล (${nurseList.length} คน)\n` +
+                      summaryNurse.join("\n") +
+                      (missingLines.length
+                        ? `\n\n📊 สรุปเวรที่ยังขาด\n${missingLines.join("\n")}`
+                        : "")
+                  );
+                  setStatusMessage(
+                    `✅ จัดเวรอัตโนมัติ (สุ่มวน quota เว้น 2 วันแรก) และสร้างสรุปแล้ว`
+                  );
+                }}
+                className="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-700 ml-2"
+              >
+                🤖🧮 2. จัดเวรอัตโนมัติ (วนเท่าเทียม)
+                <span className="block text-xs mt-1 text-yellow-200 font-normal">
+                  เว้น 2 วันแรก
+                </span>
+              </button>
+            )}
+
+          {(["admin"].includes(userRole) ||
+            ["หัวหน้าพยาบาล", "หัวหน้าวอร์ด"].includes(
+              currentUser?.user_type
+            )) &&
+            editingPlan && (
+              <button
+                onClick={() => {
+                  if (!nurseList.length) {
+                    toast.error("⚠️ ยังไม่มีรายชื่อพยาบาลในวอร์ดนี้");
+                    return;
+                  }
+
+                  // ปุ่ม 3: แจกทุกวัน
+                  const newAssignments = assignEqualShift(0);
+
+                  setAssignments(
+                    markHolidaysDisabled(
+                      newAssignments,
+                      nurseHolidays,
+                      year,
+                      month
+                    )
+                  );
+
+                  // ---- สรุปเวรเหมือนปุ่ม 1 ----
+                  const summaryDaily = [];
+                  const summaryNurse = [];
+                  let missM = 0,
+                    missE = 0,
+                    missN = 0;
+
+                  const maxPerShift = {
+                    morning: wardConfig?.max_morning_shift_per_day ?? 4,
+                    evening: wardConfig?.max_evening_shift_per_day ?? 3,
+                    night: wardConfig?.max_night_shift_per_day ?? 3,
+                  };
+
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    const list = { morning: [], evening: [], night: [] };
+
+                    nurseList.forEach((n) => {
+                      const d = newAssignments[n.id]?.[day];
+                      if (d?.morning?.value) list.morning.push(n.display_name);
+                      if (d?.evening?.value) list.evening.push(n.display_name);
+                      if (d?.night?.value) list.night.push(n.display_name);
+                    });
+
+                    const cM = list.morning.length,
+                      cE = list.evening.length,
+                      cN = list.night.length;
+                    const needM = Math.max(0, maxPerShift.morning - cM);
+                    const needE = Math.max(0, maxPerShift.evening - cE);
+                    const needN = Math.max(0, maxPerShift.night - cN);
+
+                    missM += needM;
+                    missE += needE;
+                    missN += needN;
+
+                    const dateStr = `${year}-${String(month).padStart(
+                      2,
+                      "0"
+                    )}-${String(day).padStart(2, "0")}`;
+                    summaryDaily.push(
+                      `📅 ${dateStr}
+- เช้า  (${cM}/${maxPerShift.morning})${needM ? ` ขาด ${needM}` : ""}: ${
+                        cM ? list.morning.join(", ") : "-"
+                      }
+- บ่าย (${cE}/${maxPerShift.evening})${needE ? ` ขาด ${needE}` : ""}: ${
+                        cE ? list.evening.join(", ") : "-"
+                      }
+- ดึก  (${cN}/${maxPerShift.night})${needN ? ` ขาด ${needN}` : ""}: ${
+                        cN ? list.night.join(", ") : "-"
+                      }`
+                    );
+                  }
+
+                  nurseList.forEach((n) => {
+                    let m = 0,
+                      e = 0,
+                      ni = 0;
+                    for (let d = 1; d <= daysInMonth; d++) {
+                      const a = newAssignments[n.id]?.[d] || {};
+                      if (a.morning?.value) m++;
+                      if (a.evening?.value) e++;
+                      if (a.night?.value) ni++;
+                    }
+                    const rest = daysInMonth - (m + e + ni);
+                    summaryNurse.push(
+                      `- ${n.display_name}: เช้า ${m} | บ่าย ${e} | ดึก ${ni} | พัก ${rest}`
+                    );
+                  });
+
+                  const missingLines = [];
+                  if (missM) missingLines.push(`- เช้า  : ${missM} เวร`);
+                  if (missE) missingLines.push(`- บ่าย : ${missE} เวร`);
+                  if (missN) missingLines.push(`- ดึก  : ${missN} เวร`);
+
+                  setSummaryText(
+                    summaryDaily.join("\n\n") +
+                      `\n\n👩‍⚕️ สรุปรายพยาบาล (${nurseList.length} คน)\n` +
+                      summaryNurse.join("\n") +
+                      (missingLines.length
+                        ? `\n\n📊 สรุปเวรที่ยังขาด\n${missingLines.join("\n")}`
+                        : "")
+                  );
+                  setStatusMessage(
+                    `✅ จัดเวรอัตโนมัติ (สุ่มวน quota แจกทุกวัน) และสร้างสรุปแล้ว`
+                  );
+                }}
+                className="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-700 ml-2"
+              >
+                🤖🧮 3. จัดเวรอัตโนมัติ (วนเท่าเทียม)
+                <span className="block text-xs mt-1 text-yellow-200 font-normal">
+                  จัดทุกวัน
+                </span>
+              </button>
+            )}
           {canEdit && editingPlan && Object.keys(assignments).length > 0 && (
             <>
               {/* ✅ แสดงเฉพาะตอนมี planId (แปลว่าแก้แผนเดิมอยู่) */}
