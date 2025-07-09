@@ -107,6 +107,22 @@ function ShiftPlanner() {
 
   const [editShiftDetail, setEditShiftDetail] = useState(null);
 
+  // เมื่อ setYear/setMonth ให้ save ลง localStorage ด้วย
+  const setYearAndSave = (newYear) => {
+    setYear(newYear);
+    localStorage.setItem(
+      "shift_plan_year_month",
+      JSON.stringify({ year: newYear, month })
+    );
+  };
+  const setMonthAndSave = (newMonth) => {
+    setMonth(newMonth);
+    localStorage.setItem(
+      "shift_plan_year_month",
+      JSON.stringify({ year, month: newMonth })
+    );
+  };
+
   const [cleared, setCleared] = useState(false);
 
   // 👇 ฟังก์ชันสำหรับเวรที่มี id (โหลดจาก Supabase)
@@ -245,6 +261,20 @@ function ShiftPlanner() {
       toast.error("❌ บันทึกผิดพลาด: " + e.message);
     }
   };
+
+  useEffect(() => {
+    // load year/month ล่าสุดจาก localStorage ถ้ามี
+    const raw = localStorage.getItem("shift_plan_year_month");
+    if (raw) {
+      try {
+        const ypm = JSON.parse(raw);
+        if (ypm.year && ypm.month) {
+          setYear(ypm.year);
+          setMonth(ypm.month);
+        }
+      } catch {}
+    }
+  }, []);
 
   useEffect(() => {
     const storedUser = localStorage.getItem("logged_in_user");
@@ -464,9 +494,9 @@ function ShiftPlanner() {
       console.log("📆 [DEBUG] โหลดวันลาพยาบาลจาก DB:", data);
       console.log("📆 [DEBUG] nurseHolidays (holidayMap):", holidayMap);
 
-      setStatusMessage(
-        `[DEBUG] โหลดวันลาพยาบาล: ${JSON.stringify(holidayMap)}`
-      );
+      // setStatusMessage(
+      //   `[DEBUG] โหลดวันลาพยาบาล: ${JSON.stringify(holidayMap)}`
+      // );
       setNurseHolidays(holidayMap);
       // LOG: รายชื่อพยาบาลและวันลาที่โหลดได้
       if (nurseList && nurseList.length > 0) {
@@ -1305,7 +1335,7 @@ function ShiftPlanner() {
         <select
           className="border p-2"
           value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
+          onChange={(e) => setYearAndSave(Number(e.target.value))}
         >
           {[...Array(5)].map((_, i) => {
             const y = new Date().getFullYear() + 543 - 2 + i;
@@ -1319,7 +1349,7 @@ function ShiftPlanner() {
         <select
           className="border p-2"
           value={month}
-          onChange={(e) => setMonth(Number(e.target.value))}
+          onChange={(e) => setMonthAndSave(Number(e.target.value))}
         >
           {[
             "มกราคม",
